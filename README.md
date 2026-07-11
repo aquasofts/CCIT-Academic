@@ -45,6 +45,8 @@ CCIT Academic 是一款面向长春工程学院学生的 Android 客户端。
 * 主动退出登录
 * Material 3 原生界面
 
+点点Star⭐，求求啦~
+
 ## 下载
 
 * [GitHub Releases](https://github.com/aquasofts/CCIT-Academic/releases)
