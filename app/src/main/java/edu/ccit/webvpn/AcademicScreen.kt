@@ -1,20 +1,14 @@
 package edu.ccit.webvpn
 
 import android.graphics.BitmapFactory
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.Crossfade
-import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -22,6 +16,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -88,21 +85,9 @@ fun AcademicSection(
                 }
             }
 
-            AnimatedContent(
-                targetState = when {
-                    state.initializing -> 0
-                    !state.loggedIn -> 1
-                    else -> 2
-                },
-                transitionSpec = {
-                    (fadeIn(tween(220)) + slideInVertically(tween(260)) { it / 10 }) togetherWith
-                        fadeOut(tween(140))
-                },
-                label = "academic login state",
-            ) { loginState ->
-                when (loginState) {
-                0 -> AcademicLoading("正在恢复教务系统登录…")
-                1 -> AcademicLoginForm(
+            when {
+                state.initializing -> AcademicLoading("正在恢复教务系统登录…")
+                !state.loggedIn -> AcademicLoginForm(
                     state,
                     onRefreshCaptcha,
                     onLogin,
@@ -116,7 +101,6 @@ fun AcademicSection(
                     onBestOnlyChanged = onBestOnlyChanged,
                     onQueryGrades = onQueryGrades,
                 )
-                }
             }
         }
     }
@@ -139,41 +123,62 @@ fun AcademicSection(
 }
 
 @Composable
-fun AcademicGradesSection(
+fun AcademicGradesScreen(
     state: AcademicUiState,
     onSelectTerm: (String) -> Unit,
     onBestOnlyChanged: (Boolean) -> Unit,
     onQueryGrades: () -> Unit,
 ) {
-    WebVpnCard(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.School, contentDescription = null, tint = WebVpnColors.Brown)
-                Spacer(Modifier.width(10.dp))
-                Column {
-                    Text("成绩查询", style = MaterialTheme.typography.titleLarge)
-                    Text("按学期筛选课程成绩", color = WebVpnColors.InkMuted)
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        item(key = "grade_filters", contentType = "grade_filters") {
+            WebVpnCard(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.School, contentDescription = null, tint = WebVpnColors.Brown)
+                        Spacer(Modifier.width(10.dp))
+                        Column {
+                            Text("成绩查询", style = MaterialTheme.typography.titleLarge)
+                            Text("按学期筛选课程成绩", color = WebVpnColors.InkMuted)
+                        }
+                    }
+                    AcademicGradeFilters(state, onSelectTerm, onBestOnlyChanged, onQueryGrades)
                 }
             }
-            AcademicGradeFilters(state, onSelectTerm, onBestOnlyChanged, onQueryGrades)
         }
-    }
-
-    when {
-        state.loadingGrades -> WebVpnCard(modifier = Modifier.fillMaxWidth()) {
-            AcademicLoading("正在查询成绩…")
+        when {
+            state.loadingGrades -> item(key = "grade_loading", contentType = "grade_status") {
+                WebVpnCard(modifier = Modifier.fillMaxWidth()) {
+                    AcademicLoading("正在查询成绩…")
+                }
+            }
+            state.grades.isEmpty() -> item(key = "grade_empty", contentType = "grade_status") {
+                WebVpnCard(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        "当前筛选条件下没有成绩记录。",
+                        modifier = Modifier.padding(18.dp),
+                        color = WebVpnColors.InkMuted,
+                    )
+                }
+            }
+            else -> itemsIndexed(
+                items = state.grades,
+                key = { index, grade ->
+                    "${grade.sequence}:${grade.semester}:${grade.courseCode}:$index"
+                },
+                contentType = { _, _ -> "grade" },
+            ) { _, grade ->
+                GradeCard(grade)
+            }
         }
-        state.grades.isEmpty() -> WebVpnCard(modifier = Modifier.fillMaxWidth()) {
-            Text(
-                "当前筛选条件下没有成绩记录。",
-                modifier = Modifier.padding(18.dp),
-                color = WebVpnColors.InkMuted,
-            )
+        item(key = "grade_bottom_space", contentType = "spacer") {
+            Spacer(Modifier.height(8.dp))
         }
-        else -> state.grades.forEach { grade -> GradeCard(grade) }
     }
 }
 
@@ -200,6 +205,10 @@ private fun AcademicLoginForm(
         }
     }
 
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
     Text(
         "WebVPN 已连接，请继续登录学生端。学生端有独立验证码。",
         color = WebVpnColors.InkMuted,
@@ -242,15 +251,7 @@ private fun AcademicLoginForm(
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
         colors = webVpnTextFieldColors(),
     )
-    AnimatedContent(
-        targetState = usingSavedPassword,
-        modifier = Modifier.animateContentSize(spring(stiffness = 600f)),
-        transitionSpec = {
-            (fadeIn(tween(200)) + slideInVertically(tween(240)) { it / 8 }) togetherWith fadeOut(tween(130))
-        },
-        label = "academic credentials",
-    ) { savedPassword ->
-    if (savedPassword) {
+    if (usingSavedPassword) {
         WebVpnCard(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(14.dp),
@@ -292,10 +293,12 @@ private fun AcademicLoginForm(
                 checked = rememberPassword,
                 onCheckedChange = { rememberPassword = it },
             )
-            Text("在本机加密保存此教务账号和密码")
+            Text(
+                "在本机加密保存此教务账号和密码",
+                modifier = Modifier.weight(1f),
+            )
         }
         }
-    }
     }
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -304,7 +307,7 @@ private fun AcademicLoginForm(
         OutlinedTextField(
             value = captchaCode,
             onValueChange = { captchaCode = it.trim() },
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.weight(1f).widthIn(min = 0.dp),
             label = { Text("验证码") },
             singleLine = true,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
@@ -344,6 +347,7 @@ private fun AcademicLoginForm(
             }
         }
     }
+    }
 }
 
 @Composable
@@ -357,6 +361,10 @@ private fun AcademicGradeFilters(
     val termLabel = state.terms.firstOrNull { it.value == state.selectedTerm }?.label
         ?: "全部学期"
 
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
     Text("已登录学生端", color = WebVpnColors.Success, fontWeight = FontWeight.Bold)
     Box(modifier = Modifier.fillMaxWidth()) {
         OutlinedButton(
@@ -398,6 +406,7 @@ private fun AcademicGradeFilters(
         Icon(Icons.Default.Search, contentDescription = null)
         Spacer(Modifier.width(8.dp))
         Text("查询成绩")
+    }
     }
 }
 

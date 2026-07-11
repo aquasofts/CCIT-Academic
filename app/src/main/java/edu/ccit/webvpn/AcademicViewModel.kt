@@ -181,13 +181,13 @@ class AcademicViewModel(
                     )
                 }
                 loadGrades()
-            } catch (error: Throwable) {
+            } catch (_: Throwable) {
                 _uiState.update {
                     it.copy(
                         submitting = false,
                         loggedIn = false,
                         captcha = null,
-                        message = error.message ?: "教务系统登录失败",
+                        message = "请检查账号、密码和验证码",
                     )
                 }
                 loadCaptcha()

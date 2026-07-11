@@ -4,21 +4,17 @@ import android.annotation.SuppressLint
 import android.webkit.CookieManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import androidx.activity.compose.PredictiveBackHandler
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -35,7 +31,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Logout
@@ -67,21 +65,26 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.navigation.NavHostController
+import androidx.navigation.NavType
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import edu.ccit.webvpn.core.ui.WebVpnCard
 import edu.ccit.webvpn.core.ui.WebVpnColors
 import edu.ccit.webvpn.core.webvpn.LoginResult
 import edu.ccit.webvpn.core.webvpn.RequiredAccountAction
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
 private enum class MainTab(val label: String) {
@@ -89,6 +92,13 @@ private enum class MainTab(val label: String) {
     Academic("教务系统"),
     Mine("我的"),
 }
+
+private const val AcademicHomeRoute = "academic_home"
+private const val AcademicFeatureRoute = "academic_feature"
+private const val FeatureIdArgument = "featureId"
+
+private fun academicFeatureRoute(feature: AcademicFeature): String =
+    "$AcademicFeatureRoute/${feature.id}"
 
 @Composable
 fun AuthenticatedApp(
@@ -113,18 +123,26 @@ fun AuthenticatedApp(
     val featureOrder = remember { mutableStateListOf<AcademicFeature>().apply { addAll(preferences.loadOrder()) } }
     val favorites = remember { mutableStateListOf<String>().apply { addAll(preferences.loadFavorites()) } }
     var selectedTab by remember { mutableStateOf(MainTab.Academic) }
-    var openedFeature by remember { mutableStateOf<AcademicFeature?>(null) }
     var arranging by remember { mutableStateOf(false) }
-    var predictiveBackProgress by remember { mutableFloatStateOf(0f) }
+    val pagerState = rememberPagerState(
+        initialPage = MainTab.Academic.ordinal,
+        pageCount = { MainTab.entries.size },
+    )
+    val academicNavController = rememberNavController()
 
-    PredictiveBackHandler(enabled = openedFeature != null) { progress ->
-        try {
-            progress.collect { event -> predictiveBackProgress = event.progress }
-            openedFeature = null
-        } catch (_: CancellationException) {
-            // A cancelled gesture leaves the user on the current feature.
-        } finally {
-            predictiveBackProgress = 0f
+    LaunchedEffect(selectedTab) {
+        pagerState.animateScrollToPage(
+            page = selectedTab.ordinal,
+            animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+        )
+        if (selectedTab != MainTab.Academic && academicNavController.currentDestination != null) {
+            academicNavController.popBackStack(AcademicHomeRoute, inclusive = false)
+        }
+    }
+
+    LaunchedEffect(academicState.loggedIn) {
+        if (!academicState.loggedIn && academicNavController.currentDestination != null) {
+            academicNavController.popBackStack(AcademicHomeRoute, inclusive = false)
         }
     }
 
@@ -139,21 +157,21 @@ fun AuthenticatedApp(
             return
         }
         arranging = false
-        openedFeature = feature
         selectedTab = MainTab.Academic
+        academicNavController.navigate(academicFeatureRoute(feature)) {
+            launchSingleTop = true
+        }
     }
 
     Column(Modifier.fillMaxSize()) {
-        Box(Modifier.weight(1f).fillMaxWidth()) {
-            AnimatedContent(
-                targetState = selectedTab,
-                transitionSpec = {
-                    val direction = if (targetState.ordinal > initialState.ordinal) 1 else -1
-                    (fadeIn(tween(220)) + slideInHorizontally(tween(280)) { direction * it / 10 }) togetherWith
-                        (fadeOut(tween(150)) + slideOutHorizontally(tween(220)) { -direction * it / 14 })
-                },
-                label = "main tab",
-            ) { tab ->
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            userScrollEnabled = false,
+            beyondViewportPageCount = 2,
+        ) { page ->
+            val tab = MainTab.entries[page]
+            Box(Modifier.fillMaxSize().clipToBounds()) {
             when (tab) {
                 MainTab.Favorites -> FavoritesScreen(
                     features = featureOrder.filter { it.id in favorites },
@@ -163,21 +181,19 @@ fun AuthenticatedApp(
                 )
                 MainTab.Academic -> AcademicHomeScreen(
                     state = academicState,
+                    navController = academicNavController,
                     featureOrder = featureOrder,
                     favorites = favorites.toSet(),
-                    openedFeature = openedFeature,
-                    predictiveBackProgress = predictiveBackProgress,
                     arranging = arranging,
                     onToggleArranging = { arranging = !arranging },
-                    onBack = { openedFeature = null },
                     onOpen = ::openFeature,
                     onToggleFavorite = ::toggleFavorite,
                     onMove = { from, to ->
                         if (from != to && from in featureOrder.indices && to in featureOrder.indices) {
                             featureOrder.add(to, featureOrder.removeAt(from))
-                            preferences.saveOrder(featureOrder)
                         }
                     },
+                    onOrderSettled = { preferences.saveOrder(featureOrder) },
                     onRefreshCaptcha = onRefreshAcademicCaptcha,
                     onLogin = onAcademicLogin,
                     onSelectSavedAccount = onSelectSavedAcademicAccount,
@@ -194,6 +210,7 @@ fun AuthenticatedApp(
                     loggingOut = loggingOut,
                     checkingSession = checkingSession,
                     onAcademicLogout = {
+                        academicNavController.popBackStack(AcademicHomeRoute, inclusive = false)
                         CookieManager.getInstance().removeAllCookies(null)
                         onAcademicLogout()
                     },
@@ -211,15 +228,9 @@ fun AuthenticatedApp(
                     selected = selectedTab == tab,
                     onClick = {
                         selectedTab = tab
-                        if (tab != MainTab.Academic) openedFeature = null
                         arranging = false
                     },
                     icon = {
-                        val iconScale by animateFloatAsState(
-                            targetValue = if (selectedTab == tab) 1.12f else 1f,
-                            animationSpec = spring(dampingRatio = 0.72f, stiffness = 520f),
-                            label = "${tab.label} icon",
-                        )
                         Icon(
                             when (tab) {
                                 MainTab.Favorites -> Icons.Default.Favorite
@@ -227,7 +238,6 @@ fun AuthenticatedApp(
                                 MainTab.Mine -> Icons.Default.AccountCircle
                             },
                             contentDescription = tab.label,
-                            modifier = Modifier.graphicsLayer { scaleX = iconScale; scaleY = iconScale },
                         )
                     },
                     label = { Text(tab.label) },
@@ -259,16 +269,15 @@ private fun FavoritesScreen(
 @Composable
 private fun AcademicHomeScreen(
     state: AcademicUiState,
+    navController: NavHostController,
     featureOrder: List<AcademicFeature>,
     favorites: Set<String>,
-    openedFeature: AcademicFeature?,
-    predictiveBackProgress: Float,
     arranging: Boolean,
     onToggleArranging: () -> Unit,
-    onBack: () -> Unit,
     onOpen: (AcademicFeature) -> Unit,
     onToggleFavorite: (AcademicFeature) -> Unit,
     onMove: (Int, Int) -> Unit,
+    onOrderSettled: () -> Unit,
     onRefreshCaptcha: () -> Unit,
     onLogin: (String, String, String, Boolean) -> Unit,
     onSelectSavedAccount: (String) -> Unit,
@@ -303,59 +312,89 @@ private fun AcademicHomeScreen(
                 )
             }
         }
-        else -> AnimatedContent(
-            targetState = openedFeature,
-            transitionSpec = {
-                if (targetState != null) {
-                    (fadeIn(tween(220)) + slideInHorizontally(tween(300)) { it / 7 }) togetherWith
-                        (fadeOut(tween(150)) + slideOutHorizontally(tween(220)) { -it / 12 })
-                } else {
-                    (fadeIn(tween(220)) + slideInHorizontally(tween(280)) { -it / 10 }) togetherWith
-                        (fadeOut(tween(150)) + slideOutHorizontally(tween(220)) { it / 8 })
-                }
+        else -> NavHost(
+            navController = navController,
+            startDestination = AcademicHomeRoute,
+            modifier = Modifier.fillMaxSize(),
+            enterTransition = {
+                slideInHorizontally(
+                    animationSpec = tween(220, easing = FastOutSlowInEasing),
+                    initialOffsetX = { it },
+                )
             },
-            label = "academic feature",
-        ) { feature -> when {
-        feature == null -> FeatureListScreen(
-            title = "教务系统",
-            subtitle = "${featureOrder.size} 项学生服务",
-            features = featureOrder,
-            favorites = favorites,
-            arranging = arranging,
-            onToggleArranging = onToggleArranging,
-            onOpen = onOpen,
-            onToggleFavorite = onToggleFavorite,
-            onMove = onMove,
-        )
-        feature == AcademicFeature.Grades -> FeaturePageHeader(
-            feature.title,
-            onBack,
-            predictiveBackProgress,
+            exitTransition = {
+                slideOutHorizontally(
+                    animationSpec = tween(180, easing = FastOutSlowInEasing),
+                    targetOffsetX = { -it / 4 },
+                )
+            },
+            popEnterTransition = {
+                slideInHorizontally(
+                    animationSpec = tween(180, easing = FastOutSlowInEasing),
+                    initialOffsetX = { -it / 4 },
+                )
+            },
+            popExitTransition = {
+                slideOutHorizontally(
+                    animationSpec = tween(220, easing = FastOutSlowInEasing),
+                    targetOffsetX = { it },
+                )
+            },
         ) {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                item {
-                    AcademicGradesSection(state, onSelectTerm, onBestOnlyChanged, onQueryGrades)
+            composable(AcademicHomeRoute) {
+                FeatureListScreen(
+                    title = "教务系统",
+                    subtitle = "${featureOrder.size} 项学生服务",
+                    features = featureOrder,
+                    favorites = favorites,
+                    arranging = arranging,
+                    onToggleArranging = onToggleArranging,
+                    onOpen = onOpen,
+                    onToggleFavorite = onToggleFavorite,
+                    onMove = onMove,
+                    onOrderSettled = onOrderSettled,
+                )
+            }
+            composable(
+                route = "$AcademicFeatureRoute/{$FeatureIdArgument}",
+                arguments = listOf(
+                    navArgument(FeatureIdArgument) { type = NavType.StringType },
+                ),
+            ) { backStackEntry ->
+                val feature = AcademicFeature.fromId(
+                    backStackEntry.arguments?.getString(FeatureIdArgument).orEmpty(),
+                ) ?: return@composable
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = WebVpnColors.Shell,
+                ) {
+                    when (feature) {
+                        AcademicFeature.Grades -> FeaturePageHeader(
+                            feature.title,
+                            navController::popBackStack,
+                        ) {
+                            AcademicGradesScreen(state, onSelectTerm, onBestOnlyChanged, onQueryGrades)
+                        }
+                        AcademicFeature.Timetable -> FeaturePageHeader(
+                            feature.title,
+                            navController::popBackStack,
+                        ) {
+                            TimetableScreen(
+                                timetable = state.timetable,
+                                loading = state.loadingTimetable,
+                                onLoad = onQueryTimetable,
+                            )
+                        }
+                        else -> FeaturePageHeader(
+                            feature.title,
+                            navController::popBackStack,
+                        ) {
+                            AcademicWebPage(feature, state.webViewCookies)
+                        }
+                    }
                 }
             }
         }
-        feature == AcademicFeature.Timetable -> FeaturePageHeader(
-            feature.title,
-            onBack,
-            predictiveBackProgress,
-        ) {
-            TimetableScreen(
-                timetable = state.timetable,
-                loading = state.loadingTimetable,
-                onLoad = onQueryTimetable,
-            )
-        }
-        else -> FeaturePageHeader(feature.title, onBack, predictiveBackProgress) {
-            AcademicWebPage(feature, state.webViewCookies)
-        }
-        } }
     }
 }
 
@@ -371,7 +410,12 @@ private fun FeatureListScreen(
     onOpen: (AcademicFeature) -> Unit,
     onToggleFavorite: (AcademicFeature) -> Unit,
     onMove: (Int, Int) -> Unit,
+    onOrderSettled: () -> Unit = {},
 ) {
+    var draggingFeatureId by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(arranging) {
+        if (!arranging) draggingFeatureId = null
+    }
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -396,19 +440,11 @@ private fun FeatureListScreen(
                 }
             }
         }
-        items(features, key = { it.id }) { feature ->
-            val index = features.indexOf(feature)
-            var visible by remember(feature.id) { mutableStateOf(false) }
-            LaunchedEffect(feature.id) {
-                delay((index.coerceAtMost(6) * 28L))
-                visible = true
-            }
-            AnimatedVisibility(
-                visible = visible,
-                modifier = Modifier.animateItem(placementSpec = tween(durationMillis = 260)),
-                enter = fadeIn(tween(220)) + slideInVertically(tween(280)) { it / 5 },
-            ) {
+        itemsIndexed(features, key = { _, feature -> feature.id }) { index, feature ->
             FeatureRow(
+                modifier = Modifier.animateItem(
+                    placementSpec = if (draggingFeatureId == feature.id) null else tween(140),
+                ),
                 feature = feature,
                 favorite = feature.id in favorites,
                 arranging = arranging,
@@ -417,8 +453,11 @@ private fun FeatureListScreen(
                 onOpen = { onOpen(feature) },
                 onToggleFavorite = { onToggleFavorite(feature) },
                 onMove = onMove,
+                onDraggingChanged = { dragging ->
+                    draggingFeatureId = if (dragging) feature.id else null
+                },
+                onOrderSettled = onOrderSettled,
             )
-            }
         }
         if (features.isEmpty()) item { EmptyFavoritesCard() }
         item { Spacer(Modifier.height(8.dp)) }
@@ -437,34 +476,33 @@ private fun FeatureRow(
     onOpen: () -> Unit,
     onToggleFavorite: () -> Unit,
     onMove: (Int, Int) -> Unit,
+    onDraggingChanged: (Boolean) -> Unit,
+    onOrderSettled: () -> Unit,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     var dragDistance by remember { mutableFloatStateOf(0f) }
     var dragging by remember { mutableStateOf(false) }
-    val threshold = with(LocalDensity.current) { 72.dp.toPx() }
+    var itemHeightPx by remember { mutableFloatStateOf(0f) }
+    val itemSpacingPx = with(LocalDensity.current) { 12.dp.toPx() }
     val currentIndex by rememberUpdatedState(index)
     val currentMove by rememberUpdatedState(onMove)
-    val settlingOffset by animateFloatAsState(
-        targetValue = if (dragging) dragDistance else 0f,
-        animationSpec = spring(dampingRatio = 0.72f, stiffness = 520f),
-        label = "drag offset",
-    )
+    val currentItemHeight by rememberUpdatedState(itemHeightPx)
     val dragScale by animateFloatAsState(
         targetValue = if (dragging) 1.025f else 1f,
-        animationSpec = spring(stiffness = 500f),
+        animationSpec = tween(90),
         label = "drag scale",
     )
     val cardColor by animateColorAsState(
         targetValue = if (dragging) WebVpnColors.Card else WebVpnColors.Surface,
+        animationSpec = tween(90),
         label = "drag card color",
     )
-    val displayedOffset = if (dragging) dragDistance else settlingOffset
     Box(
         modifier = modifier
             .zIndex(if (dragging) 2f else 0f)
-            .offset { IntOffset(0, displayedOffset.roundToInt()) }
+            .offset { IntOffset(0, dragDistance.roundToInt()) }
             .graphicsLayer { scaleX = dragScale; scaleY = dragScale }
-            .shadow(if (dragging) 10.dp else 0.dp, MaterialTheme.shapes.medium),
+            .onGloballyPositioned { itemHeightPx = it.size.height.toFloat() },
     ) {
         WebVpnCard(
             modifier = Modifier.fillMaxWidth().combinedClickable(
@@ -496,7 +534,7 @@ private fun FeatureRow(
                 }
                 AnimatedVisibility(
                     visible = favorite && !arranging,
-                    enter = fadeIn(tween(160)) + scaleIn(spring(stiffness = 600f), initialScale = 0.65f),
+                    enter = fadeIn(tween(120)) + scaleIn(tween(130), initialScale = 0.65f),
                     exit = fadeOut(tween(120)) + scaleOut(tween(140), targetScale = 0.7f),
                 ) {
                     Icon(Icons.Default.Favorite, contentDescription = "已收藏", tint = WebVpnColors.Brown)
@@ -511,25 +549,35 @@ private fun FeatureRow(
                             .padding(8.dp)
                             .pointerInput(feature.id, itemCount) {
                                 detectDragGestures(
-                                    onDragStart = { dragging = true },
+                                    onDragStart = {
+                                        dragging = true
+                                        onDraggingChanged(true)
+                                    },
                                     onDragEnd = {
                                         dragging = false
                                         dragDistance = 0f
+                                        onDraggingChanged(false)
+                                        onOrderSettled()
                                     },
                                     onDragCancel = {
                                         dragging = false
                                         dragDistance = 0f
+                                        onDraggingChanged(false)
+                                        onOrderSettled()
                                     },
                                 ) { change, amount ->
                                     change.consume()
                                     dragDistance += amount.y
                                     val liveIndex = currentIndex
-                                    if (dragDistance > threshold && liveIndex < itemCount - 1) {
+                                    val itemExtent = (currentItemHeight + itemSpacingPx)
+                                        .coerceAtLeast(itemSpacingPx * 2f)
+                                    val swapThreshold = itemExtent * 0.55f
+                                    if (dragDistance > swapThreshold && liveIndex < itemCount - 1) {
                                         currentMove(liveIndex, liveIndex + 1)
-                                        dragDistance -= threshold
-                                    } else if (dragDistance < -threshold && liveIndex > 0) {
+                                        dragDistance -= itemExtent
+                                    } else if (dragDistance < -swapThreshold && liveIndex > 0) {
                                         currentMove(liveIndex, liveIndex - 1)
-                                        dragDistance += threshold
+                                        dragDistance += itemExtent
                                     }
                                 }
                             },
@@ -575,18 +623,10 @@ private fun EmptyFavoritesCard() {
 private fun FeaturePageHeader(
     title: String,
     onBack: () -> Unit,
-    predictiveBackProgress: Float,
     content: @Composable () -> Unit,
 ) {
     Column(
-        Modifier
-            .fillMaxSize()
-            .graphicsLayer {
-                translationX = size.width * predictiveBackProgress * 0.32f
-                scaleX = 1f - predictiveBackProgress * 0.035f
-                scaleY = 1f - predictiveBackProgress * 0.035f
-                alpha = 1f - predictiveBackProgress * 0.08f
-            },
+        Modifier.fillMaxSize(),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
