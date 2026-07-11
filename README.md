@@ -22,7 +22,7 @@
 
 <img src="docs/images/1.jpg" alt="CCIT Academic 应用截图" width="30%" />
 <img src="docs/images/2.jpg" alt="CCIT Academic 应用截图" width="30%" />
-<img src="docs/images/3.jpg" alt="CCIT Academic 应用截图" width="30%" />
+<img src="docs/images/3.png" alt="CCIT Academic 应用截图" width="30%" />
 
 </div>
 
