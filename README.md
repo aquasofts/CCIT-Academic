@@ -14,7 +14,7 @@
 <br/>
 <br/>
 
-<p>面向长春工程学院学生的<strong>第三方 Android 教务客户端</strong></p>
+<p>面向长春工程学院学生的<strong>第三方 Android 教务平台客户端</strong></p>
 
 <p>
 通过学校 WebVPN 登录，更方便地在手机上查询成绩和使用校园教务功能。
