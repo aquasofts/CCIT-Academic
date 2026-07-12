@@ -4,6 +4,23 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+val ciVersionName = providers.gradleProperty("ciVersionName").orNull
+val ciVersionCode = providers.gradleProperty("ciVersionCode").orNull?.toIntOrNull()
+val releaseStoreFile = providers.environmentVariable("ANDROID_SIGNING_STORE_FILE").orNull
+val releaseStorePassword = providers.environmentVariable("ANDROID_SIGNING_STORE_PASSWORD").orNull
+val releaseKeyAlias = providers.environmentVariable("ANDROID_SIGNING_KEY_ALIAS").orNull
+val releaseKeyPassword = providers.environmentVariable("ANDROID_SIGNING_KEY_PASSWORD").orNull
+val releaseSigningValues = listOf(
+    releaseStoreFile,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword,
+)
+
+require(releaseSigningValues.none { it != null } || releaseSigningValues.all { !it.isNullOrBlank() }) {
+    "Release signing is only partially configured. Set all ANDROID_SIGNING_* environment variables."
+}
+
 android {
     namespace = "edu.ccit.webvpn"
     compileSdk = 35
@@ -12,8 +29,8 @@ android {
         applicationId = "edu.ccit.webvpn"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "1.0.0"
+        versionCode = ciVersionCode ?: 5
+        versionName = ciVersionName ?: "1.0.0"
     }
 
     buildFeatures {
@@ -29,6 +46,17 @@ android {
         jvmTarget = "17"
     }
 
+    signingConfigs {
+        if (releaseSigningValues.all { !it.isNullOrBlank() }) {
+            create("release") {
+                storeFile = rootProject.file(requireNotNull(releaseStoreFile))
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         getByName("release") {
             isMinifyEnabled = true
@@ -37,6 +65,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+            signingConfigs.findByName("release")?.let { signingConfig = it }
         }
         create("performance") {
             initWith(getByName("release"))
