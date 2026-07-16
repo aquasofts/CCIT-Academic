@@ -20,10 +20,7 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.LocalIndication
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.PressInteraction
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -46,18 +43,14 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.DragHandle
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -101,12 +94,14 @@ import edu.ccit.webvpn.settings.AppearanceState
 import edu.ccit.webvpn.settings.AppearanceViewModel
 import edu.ccit.webvpn.settings.AcademicFeatureSettings
 import edu.ccit.webvpn.settings.NavigationLabel
-import kotlinx.coroutines.flow.filterIsInstance
+import edu.ccit.webvpn.feature.tieba.ui.TiebaAccountCard
+import edu.ccit.webvpn.feature.tieba.ui.TiebaLoginScreen
+import edu.ccit.webvpn.feature.tieba.ui.TiebaRootScreen
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 private enum class MainTab(val label: String) {
-    Favorites("收藏"),
+    Tieba("贴吧"),
     Academic("教务系统"),
     Mine("我的"),
 }
@@ -116,6 +111,7 @@ private const val AcademicFeatureRoute = "academic_feature"
 private const val FeatureIdArgument = "featureId"
 private const val MainContentRoute = "main_content"
 private const val AppearanceSettingsRoute = "appearance_settings"
+private const val TiebaLoginRoute = "tieba_login"
 
 private fun academicFeatureRoute(feature: AcademicFeature): String =
     "$AcademicFeatureRoute/${feature.id}"
@@ -156,7 +152,6 @@ fun AuthenticatedApp(
         saved + AcademicFeature.defaults.filterNot(saved::contains)
     }
     val featureOrder = remember { mutableStateListOf<AcademicFeature>() }
-    val favorites = remember { mutableStateListOf<String>() }
     var selectedTab by remember { mutableStateOf(MainTab.Academic) }
     var arranging by remember { mutableStateOf(false) }
     val pagerState = rememberPagerState(
@@ -170,16 +165,6 @@ fun AuthenticatedApp(
         if (!arranging && featureOrder != resolvedOrder) {
             featureOrder.clear()
             featureOrder.addAll(resolvedOrder)
-        }
-    }
-
-    LaunchedEffect(storedFeatures.favoriteIds) {
-        val validFavorites = storedFeatures.favoriteIds.filterTo(linkedSetOf()) {
-            AcademicFeature.fromId(it) != null
-        }
-        if (favorites.toSet() != validFavorites) {
-            favorites.clear()
-            favorites.addAll(validFavorites)
         }
     }
 
@@ -200,13 +185,6 @@ fun AuthenticatedApp(
     LaunchedEffect(academicState.loggedIn) {
         if (!academicState.loggedIn && academicNavController.currentDestination != null) {
             academicNavController.popBackStack(AcademicHomeRoute, inclusive = false)
-        }
-    }
-
-    fun toggleFavorite(feature: AcademicFeature) {
-        if (feature.id in favorites) favorites.remove(feature.id) else favorites.add(feature.id)
-        appearanceViewModel.academicFeatureSettings.save {
-            it.copy(favoriteIds = favorites.toSet())
         }
     }
 
@@ -262,21 +240,14 @@ fun AuthenticatedApp(
             val tab = MainTab.entries[page]
             Box(Modifier.fillMaxSize().clipToBounds()) {
             when (tab) {
-                MainTab.Favorites -> FavoritesScreen(
-                    features = featureOrder.filter { it.id in favorites },
-                    favorites = favorites.toSet(),
-                    onOpen = ::openFeature,
-                    onToggleFavorite = ::toggleFavorite,
-                )
+                MainTab.Tieba -> TiebaRootScreen(active = selectedTab == MainTab.Tieba)
                 MainTab.Academic -> AcademicHomeScreen(
                     state = academicState,
                     navController = academicNavController,
                     featureOrder = featureOrder,
-                    favorites = favorites.toSet(),
                     arranging = arranging,
                     onToggleArranging = { arranging = !arranging },
                     onOpen = ::openFeature,
-                    onToggleFavorite = ::toggleFavorite,
                     onMove = { from, to ->
                         if (from != to && from in featureOrder.indices && to in featureOrder.indices) {
                             featureOrder.add(to, featureOrder.removeAt(from))
@@ -312,13 +283,14 @@ fun AuthenticatedApp(
                     loggingOut = loggingOut,
                     checkingSession = checkingSession,
                     onOpenSettings = { rootNavController.navigate(AppearanceSettingsRoute) },
+                    onTiebaLogin = { rootNavController.navigate(TiebaLoginRoute) },
                     onAcademicLogout = {
                         academicNavController.popBackStack(AcademicHomeRoute, inclusive = false)
-                        CookieManager.getInstance().removeAllCookies(null)
+                        clearCookiesForDomains(AcademicCookieDomains)
                         onAcademicLogout()
                     },
                     onLogout = {
-                        CookieManager.getInstance().removeAllCookies(null)
+                        clearCookiesForDomains(WebVpnCookieDomains)
                         onLogout()
                     },
                 )
@@ -345,6 +317,12 @@ fun AuthenticatedApp(
                 reduceEffect = appearance.ui.reduceEffect,
                 onThemedIconChange = appearanceViewModel::setThemedAppIcon,
                 onBack = rootNavController::navigateUp,
+            )
+        }
+        composable(TiebaLoginRoute) {
+            TiebaLoginScreen(
+                onBack = rootNavController::navigateUp,
+                onLoggedIn = rootNavController::navigateUp,
             )
         }
     }
@@ -408,7 +386,7 @@ private fun MainNavigationBar(
                     ) {
                     Icon(
                         when (tab) {
-                            MainTab.Favorites -> Icons.Default.Favorite
+                            MainTab.Tieba -> Icons.Default.Forum
                             MainTab.Academic -> Icons.Default.School
                             MainTab.Mine -> Icons.Default.AccountCircle
                         },
@@ -445,34 +423,13 @@ private fun MainNavigationBar(
 }
 
 @Composable
-private fun FavoritesScreen(
-    features: List<AcademicFeature>,
-    favorites: Set<String>,
-    onOpen: (AcademicFeature) -> Unit,
-    onToggleFavorite: (AcademicFeature) -> Unit,
-) {
-    FeatureListScreen(
-        title = "收藏",
-        subtitle = if (features.isEmpty()) "长按教务功能即可添加到这里" else "快速打开常用功能",
-        features = features,
-        favorites = favorites,
-        arranging = false,
-        onOpen = onOpen,
-        onToggleFavorite = onToggleFavorite,
-        onMove = { _, _ -> },
-    )
-}
-
-@Composable
 private fun AcademicHomeScreen(
     state: AcademicUiState,
     navController: NavHostController,
     featureOrder: List<AcademicFeature>,
-    favorites: Set<String>,
     arranging: Boolean,
     onToggleArranging: () -> Unit,
     onOpen: (AcademicFeature) -> Unit,
-    onToggleFavorite: (AcademicFeature) -> Unit,
     onMove: (Int, Int) -> Unit,
     onOrderSettled: () -> Unit,
     onRefreshCaptcha: () -> Unit,
@@ -552,11 +509,9 @@ private fun AcademicHomeScreen(
                     title = "教务系统",
                     subtitle = "${featureOrder.size} 项学生服务",
                     features = featureOrder,
-                    favorites = favorites,
                     arranging = arranging,
                     onToggleArranging = onToggleArranging,
                     onOpen = onOpen,
-                    onToggleFavorite = onToggleFavorite,
                     onMove = onMove,
                     onOrderSettled = onOrderSettled,
                 )
@@ -635,11 +590,9 @@ private fun FeatureListScreen(
     title: String,
     subtitle: String,
     features: List<AcademicFeature>,
-    favorites: Set<String>,
     arranging: Boolean,
     onToggleArranging: (() -> Unit)? = null,
     onOpen: (AcademicFeature) -> Unit,
-    onToggleFavorite: (AcademicFeature) -> Unit,
     onMove: (Int, Int) -> Unit,
     onOrderSettled: () -> Unit = {},
 ) {
@@ -677,12 +630,10 @@ private fun FeatureListScreen(
                     placementSpec = if (draggingFeatureId == feature.id) null else tween(140),
                 ),
                 feature = feature,
-                favorite = feature.id in favorites,
                 arranging = arranging,
                 index = index,
                 itemCount = features.size,
                 onOpen = { onOpen(feature) },
-                onToggleFavorite = { onToggleFavorite(feature) },
                 onMove = onMove,
                 onDraggingChanged = { dragging ->
                     draggingFeatureId = if (dragging) feature.id else null
@@ -690,7 +641,6 @@ private fun FeatureListScreen(
                 onOrderSettled = onOrderSettled,
             )
         }
-        if (features.isEmpty()) item { EmptyFavoritesCard() }
         item { Spacer(Modifier.height(8.dp)) }
     }
 }
@@ -700,33 +650,23 @@ private fun FeatureListScreen(
 private fun FeatureRow(
     modifier: Modifier = Modifier,
     feature: AcademicFeature,
-    favorite: Boolean,
     arranging: Boolean,
     index: Int,
     itemCount: Int,
     onOpen: () -> Unit,
-    onToggleFavorite: () -> Unit,
     onMove: (Int, Int) -> Unit,
     onDraggingChanged: (Boolean) -> Unit,
     onOrderSettled: () -> Unit,
 ) {
-    var menuExpanded by remember { mutableStateOf(false) }
     var dragDistance by remember { mutableFloatStateOf(0f) }
     var dragging by remember { mutableStateOf(false) }
-    var menuOffset by remember { mutableStateOf(IntOffset.Zero) }
     var itemHeightPx by remember { mutableFloatStateOf(0f) }
-    val interactionSource = remember { MutableInteractionSource() }
     val settleOffset = remember { Animatable(0f) }
     val coroutineScope = rememberCoroutineScope()
     val itemSpacingPx = with(LocalDensity.current) { 12.dp.toPx() }
     val currentIndex by rememberUpdatedState(index)
     val currentMove by rememberUpdatedState(onMove)
     val currentItemHeight by rememberUpdatedState(itemHeightPx)
-    LaunchedEffect(interactionSource) {
-        interactionSource.interactions.filterIsInstance<PressInteraction.Press>().collect {
-            menuOffset = IntOffset(it.pressPosition.x.roundToInt(), it.pressPosition.y.roundToInt())
-        }
-    }
     val dragScale by animateFloatAsState(
         targetValue = if (dragging) 1.025f else 1f,
         animationSpec = spring(dampingRatio = 0.9f, stiffness = 700f),
@@ -747,13 +687,7 @@ private fun FeatureRow(
             .onGloballyPositioned { itemHeightPx = it.size.height.toFloat() },
     ) {
         CcitCard(
-            modifier = Modifier.fillMaxWidth().combinedClickable(
-                interactionSource = interactionSource,
-                indication = LocalIndication.current,
-                enabled = !arranging,
-                onClick = onOpen,
-                onLongClick = { menuExpanded = true },
-            ),
+            modifier = Modifier.fillMaxWidth().clickable(enabled = !arranging, onClick = onOpen),
         ) {
             Surface(color = cardColor) {
             Row(
@@ -775,13 +709,6 @@ private fun FeatureRow(
                 Column(Modifier.weight(1f)) {
                     Text(feature.title, style = MaterialTheme.typography.titleMedium)
                     Text(feature.description, color = CcitColors.InkMuted)
-                }
-                AnimatedVisibility(
-                    visible = favorite && !arranging,
-                    enter = fadeIn(tween(120)) + scaleIn(tween(130), initialScale = 0.65f),
-                    exit = fadeOut(tween(120)) + scaleOut(tween(140), targetScale = 0.7f),
-                ) {
-                    Icon(Icons.Default.Favorite, contentDescription = "已收藏", tint = CcitColors.Brown)
                 }
                 if (arranging) {
                     Icon(
@@ -847,43 +774,6 @@ private fun FeatureRow(
             }
             }
         }
-        Box(Modifier.offset { menuOffset }) {
-            DropdownMenu(
-                expanded = menuExpanded,
-                onDismissRequest = { menuExpanded = false },
-                shape = MenuDefaults.shape,
-                containerColor = MaterialTheme.colorScheme.background,
-            ) {
-                DropdownMenuItem(
-                    text = { Text(if (favorite) "取消收藏" else "收藏") },
-                    leadingIcon = {
-                        Icon(
-                            if (favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                            contentDescription = null,
-                        )
-                    },
-                    onClick = {
-                        menuExpanded = false
-                        onToggleFavorite()
-                    },
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun EmptyFavoritesCard() {
-    CcitCard(Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Icon(Icons.Default.FavoriteBorder, contentDescription = null, tint = CcitColors.Rose)
-            Text("还没有收藏功能", style = MaterialTheme.typography.titleMedium)
-            Text("前往教务系统，长按功能即可收藏", color = CcitColors.InkMuted)
-        }
     }
 }
 
@@ -943,6 +833,7 @@ private fun MineScreen(
     loggingOut: Boolean,
     checkingSession: Boolean,
     onOpenSettings: () -> Unit,
+    onTiebaLogin: () -> Unit,
     onAcademicLogout: () -> Unit,
     onLogout: () -> Unit,
 ) {
@@ -964,6 +855,9 @@ private fun MineScreen(
                     Icon(Icons.Default.Settings, contentDescription = "设置")
                 }
             }
+        }
+        item {
+            TiebaAccountCard(onLogin = onTiebaLogin)
         }
         item {
             CcitCard(Modifier.fillMaxWidth()) {
@@ -1048,4 +942,25 @@ private fun CenteredLoading(message: String) {
         Spacer(Modifier.height(12.dp))
         Text(message, color = CcitColors.InkMuted)
     }
+}
+
+private val AcademicCookieDomains = listOf(
+    "https://http-10-198-47-148-8080.webvpn.ccit.edu.cn",
+)
+
+private val WebVpnCookieDomains = listOf(
+    "https://webvpn.ccit.edu.cn",
+)
+
+private fun clearCookiesForDomains(urls: List<String>) {
+    val manager = CookieManager.getInstance()
+    urls.forEach { url ->
+        manager.getCookie(url)?.split(';')?.mapNotNull { cookie ->
+            cookie.substringBefore('=').trim().takeIf(String::isNotBlank)
+        }?.distinct()?.forEach { name ->
+            manager.setCookie(url, "$name=; Max-Age=0; Path=/; Secure; SameSite=Lax")
+            manager.setCookie(url, "$name=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/")
+        }
+    }
+    manager.flush()
 }

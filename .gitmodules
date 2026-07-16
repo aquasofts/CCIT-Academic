@@ -1,0 +1,3 @@
+[submodule "TiebaLite"]
+	path = TiebaLite
+	url = https://github.com/0ranko0P/TiebaLite.git

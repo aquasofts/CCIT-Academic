@@ -37,7 +37,7 @@ class SettingsPreferencesTest {
     }
 
     @Test
-    fun migratedAcademicPreferencesKeepFavoritesAndOrder() {
+    fun migratedAcademicPreferencesDropFavoritesAndKeepOrder() {
         val migrated = mutablePreferencesOf(
             stringSetPreferencesKey("favorite_ids") to setOf("grades", "timetable"),
             stringPreferencesKey("feature_order") to "timetable,grades,evaluation",
@@ -45,7 +45,6 @@ class SettingsPreferencesTest {
 
         assertEquals(
             AcademicFeatureSettings(
-                favoriteIds = setOf("grades", "timetable"),
                 orderIds = listOf("timetable", "grades", "evaluation"),
             ),
             readAcademicFeatureSettings(migrated),
@@ -57,7 +56,7 @@ class SettingsPreferencesTest {
         val preferences = mutablePreferencesOf()
         val theme = ThemeSettings(Theme.PINK, 0xFF123456.toInt(), Variant.EXPRESSIVE)
         val ui = UISettings(bottomNavFloating = true, reduceEffect = true)
-        val features = AcademicFeatureSettings(setOf("grades"), listOf("grades", "timetable"))
+        val features = AcademicFeatureSettings(listOf("grades", "timetable"))
 
         writeThemeSettings(preferences, theme)
         writeUiSettings(preferences, ui)

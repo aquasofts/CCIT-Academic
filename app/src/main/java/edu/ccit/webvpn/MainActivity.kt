@@ -89,6 +89,7 @@ import edu.ccit.webvpn.settings.AppearanceState
 import edu.ccit.webvpn.settings.AppearanceViewModel
 import edu.ccit.webvpn.settings.DarkPreference
 import edu.ccit.webvpn.settings.Theme
+import edu.ccit.webvpn.feature.tieba.TiebaRuntime
 import kotlinx.coroutines.delay
 
 @AndroidEntryPoint
@@ -123,6 +124,11 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        TiebaRuntime.get(this).onAppForegrounded()
     }
 }
 

@@ -61,7 +61,6 @@ data class AppearanceState(
 
 @Immutable
 data class AcademicFeatureSettings(
-    val favoriteIds: Set<String> = emptySet(),
     val orderIds: List<String> = emptyList(),
 )
 
@@ -84,6 +83,10 @@ class DataStoreSettingsRepository @Inject constructor(
 ) : SettingsRepository {
     private val dataStore = context.settingsDataStore
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    init {
+        scope.launch { dataStore.edit { it.remove(FavoriteIdsKey) } }
+    }
 
     private fun <T> settings(
         read: (Preferences) -> T,
@@ -169,7 +172,6 @@ internal fun writeUiSettings(
 
 internal fun readAcademicFeatureSettings(preferences: Preferences): AcademicFeatureSettings =
     AcademicFeatureSettings(
-        favoriteIds = preferences[FavoriteIdsKey].orEmpty(),
         orderIds = preferences[FeatureOrderKey]
             ?.split(',')
             ?.filter(String::isNotBlank)
@@ -180,7 +182,7 @@ internal fun writeAcademicFeatureSettings(
     preferences: androidx.datastore.preferences.core.MutablePreferences,
     value: AcademicFeatureSettings,
 ) {
-    preferences[FavoriteIdsKey] = value.favoriteIds
+    preferences.remove(FavoriteIdsKey)
     preferences[FeatureOrderKey] = value.orderIds.joinToString(",")
 }
 

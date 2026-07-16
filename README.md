@@ -136,3 +136,9 @@ CCIT Academic 是第三方非官方客户端，不代表长春工程学院。
 因学校系统升级、网络故障、设备环境、用户操作或第三方服务变化造成的问题，开发者不承担相应责任。
 
 涉及选课、考试、成绩认定、学籍管理等重要事项时，请务必以学校官方通知和官方系统中的信息为准。
+
+## 开源许可与贴吧来源
+
+整合贴吧功能后的应用按 GNU GPL version 3 发布。贴吧登录、浏览映射与自动签到逻辑基于固定提交
+[`TiebaLite@910fd56`](https://github.com/0ranko0P/TiebaLite/tree/910fd564c47f77ab6a807f1bc122279e7b9aa0b1)
+修改，完整来源、版权和修改说明见 [`feature/tieba/NOTICE.md`](feature/tieba/NOTICE.md)。

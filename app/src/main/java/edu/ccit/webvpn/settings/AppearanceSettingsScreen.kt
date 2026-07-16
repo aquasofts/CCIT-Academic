@@ -31,6 +31,7 @@ import androidx.compose.material.icons.outlined.Animation
 import androidx.compose.material.icons.outlined.BlurOn
 import androidx.compose.material.icons.outlined.ColorLens
 import androidx.compose.material.icons.outlined.DarkMode
+import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Houseboat
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Style
@@ -65,6 +66,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.google.android.material.color.utilities.Variant
 import edu.ccit.webvpn.R
+import edu.ccit.webvpn.feature.tieba.ui.TiebaSettingsScreen
 import edu.ccit.webvpn.settings.preference.SegmentedPreference
 import edu.ccit.webvpn.settings.preference.SegmentedPrefsScreen
 import edu.ccit.webvpn.settings.preference.SegmentedTextPrefsScreen
@@ -73,6 +75,7 @@ import edu.ccit.webvpn.settings.preference.preference
 private const val SettingsHomeRoute = "settings_home"
 private const val ThemeSettingsRoute = "settings_theme"
 private const val UiSettingsRoute = "settings_ui"
+private const val TiebaSettingsRoute = "settings_tieba"
 
 @Composable
 fun AppearanceSettingsScreen(
@@ -123,6 +126,7 @@ fun AppearanceSettingsScreen(
                 onBack = onBack,
                 onTheme = { navigator.navigate(ThemeSettingsRoute) },
                 onUi = { navigator.navigate(UiSettingsRoute) },
+                onTieba = { navigator.navigate(TiebaSettingsRoute) },
             )
         }
         composable(ThemeSettingsRoute) {
@@ -140,11 +144,19 @@ fun AppearanceSettingsScreen(
                 onBack = navigator::navigateUp,
             )
         }
+        composable(TiebaSettingsRoute) {
+            TiebaSettingsScreen(onBack = navigator::navigateUp)
+        }
     }
 }
 
 @Composable
-private fun SettingsHomeScreen(onBack: () -> Unit, onTheme: () -> Unit, onUi: () -> Unit) {
+private fun SettingsHomeScreen(
+    onBack: () -> Unit,
+    onTheme: () -> Unit,
+    onUi: () -> Unit,
+    onTieba: () -> Unit,
+) {
     val themeTitle = stringResource(R.string.settings_theme_title)
     val themeSummary = stringResource(R.string.settings_theme_summary)
     val uiTitle = stringResource(R.string.settings_ui_title)
@@ -165,6 +177,13 @@ private fun SettingsHomeScreen(onBack: () -> Unit, onTheme: () -> Unit, onUi: ()
                     summary = uiSummary,
                     icon = Icons.Outlined.Tune,
                     trailingIcon = Icons.Outlined.Style,
+                )
+                preference(
+                    onClick = onTieba,
+                    title = "贴吧设置",
+                    summary = "阅读偏好、自动签到与最近结果",
+                    icon = Icons.Outlined.Forum,
+                    trailingIcon = Icons.Outlined.Tune,
                 )
             }
         }

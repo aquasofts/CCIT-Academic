@@ -1,0 +1,108 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "62b1880a618c8bc4a1a48e992680dc2a",
+    "entities": [
+      {
+        "tableName": "account",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`uid` INTEGER NOT NULL, `name` TEXT NOT NULL, `nickname` TEXT NOT NULL, `bduss` TEXT NOT NULL, `tbs` TEXT NOT NULL, `portrait` TEXT NOT NULL, `s_token` TEXT NOT NULL, `cookie` TEXT NOT NULL, `intro` TEXT NOT NULL, `fans` TEXT NOT NULL, `posts` TEXT NOT NULL, `concerned` TEXT NOT NULL, `zid` TEXT, `last_update` INTEGER NOT NULL, PRIMARY KEY(`uid`))",
+        "fields": [
+          {
+            "fieldPath": "uid",
+            "columnName": "uid",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nickname",
+            "columnName": "nickname",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "bduss",
+            "columnName": "bduss",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tbs",
+            "columnName": "tbs",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "portrait",
+            "columnName": "portrait",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sToken",
+            "columnName": "s_token",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cookie",
+            "columnName": "cookie",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "intro",
+            "columnName": "intro",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fans",
+            "columnName": "fans",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "posts",
+            "columnName": "posts",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "concerned",
+            "columnName": "concerned",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "zid",
+            "columnName": "zid",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "lastUpdate",
+            "columnName": "last_update",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "uid"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '62b1880a618c8bc4a1a48e992680dc2a')"
+    ]
+  }
+}

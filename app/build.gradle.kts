@@ -105,6 +105,7 @@ dependencies {
     implementation(project(":core:captcha"))
     implementation(project(":core:ui"))
     implementation(project(":core:webvpn"))
+    implementation(project(":feature:tieba"))
     add("autoCaptchaImplementation", project(":feature:captcha-autofill"))
 
     implementation(libs.androidx.core.ktx)
