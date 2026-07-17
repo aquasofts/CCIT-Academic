@@ -8,7 +8,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.spring
@@ -45,8 +44,10 @@ import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -86,6 +87,7 @@ import edu.ccit.webvpn.core.ui.CcitCard
 import edu.ccit.webvpn.core.ui.CcitColors
 import edu.ccit.webvpn.core.ui.ccitBackground
 import edu.ccit.webvpn.core.ui.CcitOutlinedButton
+import edu.ccit.webvpn.core.ui.CcitPrimaryButton
 import edu.ccit.webvpn.core.academic.EvaluationAnswer
 import edu.ccit.webvpn.core.webvpn.LoginResult
 import edu.ccit.webvpn.core.webvpn.RequiredAccountAction
@@ -94,15 +96,18 @@ import edu.ccit.webvpn.settings.AppearanceState
 import edu.ccit.webvpn.settings.AppearanceViewModel
 import edu.ccit.webvpn.settings.AcademicFeatureSettings
 import edu.ccit.webvpn.settings.NavigationLabel
+import edu.ccit.webvpn.settings.RssFeedSettings
 import edu.ccit.webvpn.feature.tieba.ui.TiebaAccountCard
 import edu.ccit.webvpn.feature.tieba.ui.TiebaLoginScreen
 import edu.ccit.webvpn.feature.tieba.ui.TiebaRootScreen
+import edu.ccit.webvpn.feature.home.HomeRootScreen
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
-private enum class MainTab(val label: String) {
+internal enum class MainTab(val label: String) {
     Tieba("贴吧"),
-    Academic("教务系统"),
+    News("新闻"),
+    Academic("教务"),
     Mine("我的"),
 }
 
@@ -118,10 +123,16 @@ private fun academicFeatureRoute(feature: AcademicFeature): String =
 
 @Composable
 fun AuthenticatedApp(
-    result: LoginResult,
+    result: LoginResult?,
+    webVpnState: WebVpnUiState,
     loggingOut: Boolean,
     checkingSession: Boolean,
     academicState: AcademicUiState,
+    onRefreshWebVpnCaptcha: () -> Unit,
+    onWebVpnLogin: (String, String, String, Boolean) -> Unit,
+    onSelectSavedWebVpnAccount: (String) -> Unit,
+    onForgetSavedWebVpnAccount: (String) -> Unit,
+    onUseManualWebVpnCredentials: () -> Unit,
     onRefreshAcademicCaptcha: () -> Unit,
     onAcademicLogin: (String, String, String, Boolean) -> Unit,
     onSelectSavedAcademicAccount: (String) -> Unit,
@@ -147,15 +158,18 @@ fun AuthenticatedApp(
     val storedFeatures by appearanceViewModel.academicFeatureSettings.collectAsStateWithLifecycle(
         initialValue = AcademicFeatureSettings(),
     )
+    val rssFeeds by appearanceViewModel.rssFeedSettings.collectAsStateWithLifecycle(
+        initialValue = RssFeedSettings(),
+    )
     val resolvedOrder = remember(storedFeatures.orderIds) {
         val saved = storedFeatures.orderIds.mapNotNull(AcademicFeature::fromId).distinct()
         saved + AcademicFeature.defaults.filterNot(saved::contains)
     }
     val featureOrder = remember { mutableStateListOf<AcademicFeature>() }
-    var selectedTab by remember { mutableStateOf(MainTab.Academic) }
+    var selectedTab by remember { mutableStateOf(MainTab.Tieba) }
     var arranging by remember { mutableStateOf(false) }
     val pagerState = rememberPagerState(
-        initialPage = MainTab.Academic.ordinal,
+        initialPage = MainTab.Tieba.ordinal,
         pageCount = { MainTab.entries.size },
     )
     val academicNavController = rememberNavController()
@@ -235,48 +249,65 @@ fun AuthenticatedApp(
             state = pagerState,
             modifier = Modifier.weight(1f).fillMaxWidth(),
             userScrollEnabled = false,
-            beyondViewportPageCount = 2,
+            beyondViewportPageCount = 1,
         ) { page ->
             val tab = MainTab.entries[page]
             Box(Modifier.fillMaxSize().clipToBounds()) {
             when (tab) {
-                MainTab.Tieba -> TiebaRootScreen(active = selectedTab == MainTab.Tieba)
-                MainTab.Academic -> AcademicHomeScreen(
-                    state = academicState,
-                    navController = academicNavController,
-                    featureOrder = featureOrder,
-                    arranging = arranging,
-                    onToggleArranging = { arranging = !arranging },
-                    onOpen = ::openFeature,
-                    onMove = { from, to ->
-                        if (from != to && from in featureOrder.indices && to in featureOrder.indices) {
-                            featureOrder.add(to, featureOrder.removeAt(from))
-                        }
-                    },
-                    onOrderSettled = {
-                        appearanceViewModel.academicFeatureSettings.save {
-                            it.copy(orderIds = featureOrder.map(AcademicFeature::id))
-                        }
-                    },
-                    onRefreshCaptcha = onRefreshAcademicCaptcha,
-                    onLogin = onAcademicLogin,
-                    onSelectSavedAccount = onSelectSavedAcademicAccount,
-                    onForgetSavedAccount = onForgetSavedAcademicAccount,
-                    onUseManualCredentials = onUseManualAcademicCredentials,
-                    onSelectTerm = onSelectAcademicTerm,
-                    onBestOnlyChanged = onBestOnlyChanged,
-                    onQueryGrades = onQueryGrades,
-                    onQueryTimetable = onQueryTimetable,
-                    onSelectCourseSelectionTerm = onSelectCourseSelectionTerm,
-                    onQueryCourseSelection = onQueryCourseSelection,
-                    onLoadEvaluationBatches = onLoadEvaluationBatches,
-                    onOpenEvaluationBatch = onOpenEvaluationBatch,
-                    onCloseEvaluationBatch = onCloseEvaluationBatch,
-                    onOpenEvaluationCourse = onOpenEvaluationCourse,
-                    onCloseEvaluationForm = onCloseEvaluationForm,
-                    onSaveEvaluation = onSaveEvaluation,
+                MainTab.News -> HomeRootScreen(
+                    active = selectedTab == MainTab.News,
                     reduceMotion = appearance.ui.reduceEffect,
+                    wechatRssUrls = rssFeeds.wechatUrls,
+                    newsRssUrls = rssFeeds.newsUrls,
                 )
+                MainTab.Tieba -> TiebaRootScreen(active = selectedTab == MainTab.Tieba)
+                MainTab.Academic -> if (result == null) {
+                    WebVpnLoginScreen(
+                        state = webVpnState,
+                        onRefreshCaptcha = onRefreshWebVpnCaptcha,
+                        onLogin = onWebVpnLogin,
+                        onSelectSavedAccount = onSelectSavedWebVpnAccount,
+                        onForgetSavedAccount = onForgetSavedWebVpnAccount,
+                        onUseManualCredentials = onUseManualWebVpnCredentials,
+                    )
+                } else {
+                    AcademicHomeScreen(
+                        state = academicState,
+                        navController = academicNavController,
+                        featureOrder = featureOrder,
+                        arranging = arranging,
+                        onToggleArranging = { arranging = !arranging },
+                        onOpen = ::openFeature,
+                        onMove = { from, to ->
+                            if (from != to && from in featureOrder.indices && to in featureOrder.indices) {
+                                featureOrder.add(to, featureOrder.removeAt(from))
+                            }
+                        },
+                        onOrderSettled = {
+                            appearanceViewModel.academicFeatureSettings.save {
+                                it.copy(orderIds = featureOrder.map(AcademicFeature::id))
+                            }
+                        },
+                        onRefreshCaptcha = onRefreshAcademicCaptcha,
+                        onLogin = onAcademicLogin,
+                        onSelectSavedAccount = onSelectSavedAcademicAccount,
+                        onForgetSavedAccount = onForgetSavedAcademicAccount,
+                        onUseManualCredentials = onUseManualAcademicCredentials,
+                        onSelectTerm = onSelectAcademicTerm,
+                        onBestOnlyChanged = onBestOnlyChanged,
+                        onQueryGrades = onQueryGrades,
+                        onQueryTimetable = onQueryTimetable,
+                        onSelectCourseSelectionTerm = onSelectCourseSelectionTerm,
+                        onQueryCourseSelection = onQueryCourseSelection,
+                        onLoadEvaluationBatches = onLoadEvaluationBatches,
+                        onOpenEvaluationBatch = onOpenEvaluationBatch,
+                        onCloseEvaluationBatch = onCloseEvaluationBatch,
+                        onOpenEvaluationCourse = onOpenEvaluationCourse,
+                        onCloseEvaluationForm = onCloseEvaluationForm,
+                        onSaveEvaluation = onSaveEvaluation,
+                        reduceMotion = appearance.ui.reduceEffect,
+                    )
+                }
                 MainTab.Mine -> MineScreen(
                     result = result,
                     academicState = academicState,
@@ -284,6 +315,7 @@ fun AuthenticatedApp(
                     checkingSession = checkingSession,
                     onOpenSettings = { rootNavController.navigate(AppearanceSettingsRoute) },
                     onTiebaLogin = { rootNavController.navigate(TiebaLoginRoute) },
+                    onWebVpnLogin = { selectedTab = MainTab.Academic },
                     onAcademicLogout = {
                         academicNavController.popBackStack(AcademicHomeRoute, inclusive = false)
                         clearCookiesForDomains(AcademicCookieDomains)
@@ -314,6 +346,8 @@ fun AuthenticatedApp(
                 current = appearance,
                 themeSettings = appearanceViewModel.themeSettings,
                 uiSettings = appearanceViewModel.uiSettings,
+                rssFeedSettings = appearanceViewModel.rssFeedSettings,
+                currentRssFeeds = rssFeeds,
                 reduceEffect = appearance.ui.reduceEffect,
                 onThemedIconChange = appearanceViewModel::setThemedAppIcon,
                 onBack = rootNavController::navigateUp,
@@ -329,7 +363,7 @@ fun AuthenticatedApp(
 }
 
 @Composable
-private fun MainNavigationBar(
+internal fun MainNavigationBar(
     selectedTab: MainTab,
     floating: Boolean,
     labelMode: NavigationLabel,
@@ -346,17 +380,6 @@ private fun MainNavigationBar(
                 val selected = selectedTab == tab
                 val showLabel = labelMode == NavigationLabel.ALWAYS ||
                     (labelMode == NavigationLabel.SELECTED && selected)
-                val width by animateDpAsState(
-                    targetValue = when {
-                        showLabel && selected -> 108.dp
-                        showLabel -> 88.dp
-                        else -> 52.dp
-                    },
-                    animationSpec = if (reduceMotion) tween(120) else {
-                        spring(dampingRatio = 0.78f, stiffness = 650f)
-                    },
-                    label = "${tab.name} navigation indicator width",
-                )
                 val iconScale by animateFloatAsState(
                     targetValue = if (selected && !reduceMotion) 1.12f else 1f,
                     animationSpec = if (reduceMotion) tween(120) else {
@@ -366,7 +389,7 @@ private fun MainNavigationBar(
                 )
                 Surface(
                     onClick = { onSelect(tab) },
-                    modifier = Modifier.width(width).height(52.dp),
+                    modifier = Modifier.weight(1f).padding(horizontal = 2.dp).height(52.dp),
                     shape = MaterialTheme.shapes.extraLarge,
                     color = if (selected) {
                         MaterialTheme.colorScheme.primaryContainer
@@ -380,13 +403,14 @@ private fun MainNavigationBar(
                     },
                 ) {
                     Row(
-                        modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
+                        modifier = Modifier.fillMaxSize().padding(horizontal = 6.dp),
                         horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                     Icon(
                         when (tab) {
                             MainTab.Tieba -> Icons.Default.Forum
+                            MainTab.News -> Icons.Default.Home
                             MainTab.Academic -> Icons.Default.School
                             MainTab.Mine -> Icons.Default.AccountCircle
                         },
@@ -828,16 +852,17 @@ private fun AcademicWebPage(feature: AcademicFeature, cookies: List<String>) {
 
 @Composable
 private fun MineScreen(
-    result: LoginResult,
+    result: LoginResult?,
     academicState: AcademicUiState,
     loggingOut: Boolean,
     checkingSession: Boolean,
     onOpenSettings: () -> Unit,
     onTiebaLogin: () -> Unit,
+    onWebVpnLogin: () -> Unit,
     onAcademicLogout: () -> Unit,
     onLogout: () -> Unit,
 ) {
-    val info = result.userInfo
+    val requiredAction = result?.requiredAction
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -862,21 +887,41 @@ private fun MineScreen(
         item {
             CcitCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    InfoRow("连接状态", if (checkingSession) "正在确认" else "已连接")
-                    InfoRow("用户名", info.username.orEmpty().ifBlank { "—" })
-                    InfoRow("昵称", info.nickname ?: info.fullName ?: "—")
-                    InfoRow("用户组", info.groups.joinToString("、").ifBlank { "—" })
-                    InfoRow("账号类型", if (info.authType == 0) "本地账号" else "统一认证账号")
-                    InfoRow("微信绑定", if (info.bindWechat) "已绑定" else "未绑定")
-                    InfoRow("动态口令", if (info.bindOtp) "已绑定" else "未绑定")
+                    val info = result?.userInfo
+                    InfoRow(
+                        "连接状态",
+                        when {
+                            checkingSession -> "正在确认"
+                            result != null -> "已连接"
+                            else -> "未登录"
+                        },
+                    )
+                    if (info != null) {
+                        InfoRow("用户名", info.username.orEmpty().ifBlank { "—" })
+                        InfoRow("昵称", info.nickname ?: info.fullName ?: "—")
+                        InfoRow("用户组", info.groups.joinToString("、").ifBlank { "—" })
+                        InfoRow("账号类型", if (info.authType == 0) "本地账号" else "统一认证账号")
+                        InfoRow("微信绑定", if (info.bindWechat) "已绑定" else "未绑定")
+                        InfoRow("动态口令", if (info.bindOtp) "已绑定" else "未绑定")
+                    } else {
+                        Text("登录 WebVPN 后才能登录教务系统。", color = CcitColors.InkMuted)
+                        CcitPrimaryButton(
+                            onClick = onWebVpnLogin,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Icon(Icons.Default.VpnKey, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("登录 WebVPN")
+                        }
+                    }
                 }
             }
         }
-        if (result.requiredAction != RequiredAccountAction.None) {
+        if (requiredAction != null && requiredAction != RequiredAccountAction.None) {
             item {
                 CcitCard(Modifier.fillMaxWidth()) {
                     Text(
-                        when (result.requiredAction) {
+                        when (requiredAction) {
                             RequiredAccountAction.CompleteTwoFactorAuthentication -> "请先完成账号二次认证"
                             RequiredAccountAction.ChangePassword -> "请先修改初始密码"
                             RequiredAccountAction.BindLocalAccount -> "请先绑定本地账号"
@@ -905,7 +950,7 @@ private fun MineScreen(
                 }
             }
         }
-        item {
+        if (result != null) item {
             CcitOutlinedButton(
                 onClick = onLogout,
                 modifier = Modifier.fillMaxWidth().height(52.dp),

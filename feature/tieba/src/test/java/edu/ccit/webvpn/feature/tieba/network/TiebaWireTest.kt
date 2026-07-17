@@ -10,6 +10,7 @@ import com.huanchengfly.tieba.post.api.models.protos.pbFloor.PbFloorRequest
 import com.huanchengfly.tieba.post.api.models.protos.pbPage.PbPageRequest
 import com.huanchengfly.tieba.post.api.models.protos.profile.ProfileRequest
 import com.huanchengfly.tieba.post.api.models.protos.userPost.UserPostRequest
+import com.huanchengfly.tieba.post.api.models.protos.addPost.AddPostRequest
 import edu.ccit.webvpn.feature.tieba.TARGET_FORUM_ID
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.runBlocking
@@ -114,6 +115,34 @@ class TiebaWireTest {
         assertEquals(0, message.data_?.is_thread)
         assertEquals(0, message.data_?.subtype)
         assertEquals(1, message.data_?.need_content)
+    }
+
+    @Test
+    fun `add post multipart matches TiebaLite nested reply fields`() {
+        val credentials = TiebaReadCredentials(7, "bduss", "stoken", "zid")
+        val multipart = requests.addPost(
+            content = "回复 #(reply, portrait, 昵称) :正文",
+            forumId = TARGET_FORUM_ID,
+            forumName = "长春工程学院",
+            threadId = 123,
+            postId = 456,
+            subPostId = 789,
+            replyUserId = 9,
+            nickname = "当前用户",
+            tbs = "tbs",
+            credentials = credentials,
+        ) as MultipartBody
+        val message = AddPostRequest.ADAPTER.decode(multipart.dataPart())
+
+        assertEquals(TIEBA_V12_POST_VERSION, message.data_?.common?._client_version)
+        assertEquals("tbs", message.data_?.common?.tbs)
+        assertEquals("456", message.data_?.quote_id)
+        assertEquals("456", message.data_?.repostid)
+        assertEquals("789", message.data_?.sub_post_id)
+        assertEquals("9", message.data_?.reply_uid)
+        assertNull(message.data_?.post_from)
+        assertEquals("当前用户", message.data_?.name_show)
+        assertNotNull(multipart.parts.firstOrNull { it.headers?.get("Content-Disposition")?.contains("stoken") == true })
     }
 
     @Test

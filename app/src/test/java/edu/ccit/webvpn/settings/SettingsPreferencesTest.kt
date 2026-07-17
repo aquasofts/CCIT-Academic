@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.mutablePreferencesOf
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import com.google.android.material.color.utilities.Variant
+import edu.ccit.webvpn.feature.home.DefaultHomeFeedUrls
 import edu.ccit.webvpn.settings.preference.SettingsSegmentedPrefsScope
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -57,18 +58,37 @@ class SettingsPreferencesTest {
         val theme = ThemeSettings(Theme.PINK, 0xFF123456.toInt(), Variant.EXPRESSIVE)
         val ui = UISettings(bottomNavFloating = true, reduceEffect = true)
         val features = AcademicFeatureSettings(listOf("grades", "timetable"))
+        val rss = RssFeedSettings(
+            wechatUrls = listOf("https://example.com/wechat.xml"),
+            newsUrls = listOf("https://example.com/news.xml"),
+        )
 
         writeThemeSettings(preferences, theme)
         writeUiSettings(preferences, ui)
         writeAcademicFeatureSettings(preferences, features)
+        writeRssFeedSettings(preferences, rss)
 
         assertEquals(theme, readThemeSettings(preferences))
         assertEquals(ui, readUiSettings(preferences))
         assertEquals(features, readAcademicFeatureSettings(preferences))
+        assertEquals(rss, readRssFeedSettings(preferences))
         assertFalse(
             SettingsSegmentedPrefsScope::class.java.methods.any { method ->
                 method.parameterTypes.any { it.name == "kotlin.reflect.KProperty1" }
             },
         )
+    }
+
+    @Test
+    fun rssSettingsUseRequestedDefaultsAndNormalizePastedMarkdown() {
+        val defaults = readRssFeedSettings(emptyPreferences())
+
+        assertEquals(DefaultHomeFeedUrls.wechat, defaults.wechatUrls)
+        assertEquals(DefaultHomeFeedUrls.news, defaults.newsUrls)
+        assertEquals(
+            "https://cit-news.pages.dev/rss.xml",
+            normalizeRssUrl("[校内新闻](https://cit-news.pages.dev/rss.xml)"),
+        )
+        assertEquals(null, normalizeRssUrl("http://example.com/rss.xml"))
     }
 }

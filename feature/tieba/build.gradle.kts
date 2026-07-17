@@ -24,6 +24,10 @@ wire {
         "tieba.profile.ProfileResponse",
         "tieba.userPost.UserPostRequest",
         "tieba.userPost.UserPostResponse",
+        "tieba.forumRuleDetail.ForumRuleDetailRequest",
+        "tieba.forumRuleDetail.ForumRuleDetailResponse",
+        "tieba.addPost.AddPostRequest",
+        "tieba.addPost.AddPostResponse",
     )
     kotlin {
         android = true

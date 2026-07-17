@@ -35,7 +35,7 @@ class TiebaRuntime private constructor(context: Context) {
     private val database = Room.databaseBuilder(appContext, TiebaDatabase::class.java, "tieba_lite.db").build()
     internal val accountDao = database.accountDao()
     val settings = TiebaSettingsRepository(appContext)
-    val network = TiebaNetworkRepository.create(appContext)
+    val network = TiebaNetworkRepository.create(appContext, settings)
     private val signMutex = Mutex()
     private val _signState = MutableStateFlow<TiebaSignState>(TiebaSignState.Idle)
     val signState: StateFlow<TiebaSignState> = _signState.asStateFlow()
@@ -69,7 +69,12 @@ class TiebaRuntime private constructor(context: Context) {
     }
 
     fun onAppForegrounded() {
-        scope.launch { autoSignForToday() }
+        scope.launch {
+            settings.refreshClientActiveTimestamp()
+            val current = accountDao.get()
+            runCatching { network.syncClientConfig(current) }
+            autoSignForToday()
+        }
     }
 
     private suspend fun autoSignForToday() {
@@ -81,17 +86,19 @@ class TiebaRuntime private constructor(context: Context) {
         }
     }
 
-    suspend fun signNow(): SignResponse = signMutex.withLock {
+    suspend fun signNow(forumTbs: String): SignResponse = signMutex.withLock {
         val current = accountDao.get()
         if (current == null) {
             return@withLock SignResponse(SignOutcome.FAILED, "请先登录贴吧账号")
         }
-        performSign(current)
+        performSign(current, forumTbs)
     }
 
-    private suspend fun performSign(current: AccountEntity): SignResponse {
+    private suspend fun performSign(current: AccountEntity, forumTbs: String? = null): SignResponse {
         _signState.value = TiebaSignState.Running
-        val response = runCatching { network.sign(current) }
+        val response = runCatching {
+            if (forumTbs == null) network.signWithFreshForumState(current) else network.sign(current, forumTbs)
+        }
             .getOrElse { error -> SignResponse(SignOutcome.FAILED, error.message ?: "签到失败") }
         settings.recordSign(response.outcome, response.message)
         _signState.value = TiebaSignState.Finished(response.outcome, response.message)

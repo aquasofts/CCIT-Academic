@@ -15,7 +15,9 @@ import edu.ccit.webvpn.feature.tieba.TiebaSignSettings
 import java.io.IOException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import java.util.UUID
 
 private val Context.tiebaDataStore by preferencesDataStore("tieba_settings")
 
@@ -62,6 +64,51 @@ class TiebaSettingsRepository(private val context: Context) {
 
     suspend fun disableSign() = store.edit { it[SignEnabledKey] = false }
 
+    suspend fun clientConfig(baiduId: String? = null): TiebaClientConfig {
+        val values = store.data.first()
+        val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+        val uuid = values[ClientUuidKey]?.takeIf(String::isNotBlank) ?: UUID.randomUUID().toString()
+        val activeTimestamp = values[ClientActiveTimestampKey] ?: System.currentTimeMillis()
+        val firstInstallTime = values[ClientFirstInstallTimeKey] ?: packageInfo.firstInstallTime
+        val lastUpdateTime = values[ClientLastUpdateTimeKey] ?: packageInfo.lastUpdateTime
+        val resolvedBaiduId = baiduId?.takeIf(String::isNotBlank) ?: values[ClientBaiduIdKey]
+        if (
+            values[ClientUuidKey] != uuid ||
+            values[ClientActiveTimestampKey] == null ||
+            values[ClientFirstInstallTimeKey] == null ||
+            values[ClientLastUpdateTimeKey] == null ||
+            resolvedBaiduId != values[ClientBaiduIdKey]
+        ) {
+            store.edit {
+                it[ClientUuidKey] = uuid
+                it[ClientActiveTimestampKey] = activeTimestamp
+                it[ClientFirstInstallTimeKey] = firstInstallTime
+                it[ClientLastUpdateTimeKey] = lastUpdateTime
+                resolvedBaiduId?.let { value -> it[ClientBaiduIdKey] = value }
+            }
+        }
+        return TiebaClientConfig(
+            uuid = uuid,
+            clientId = values[ClientIdKey],
+            sampleId = values[ClientSampleIdKey],
+            baiduId = resolvedBaiduId,
+            activeTimestamp = activeTimestamp,
+            firstInstallTime = firstInstallTime,
+            lastUpdateTime = lastUpdateTime,
+        )
+    }
+
+    suspend fun updateClientSync(clientId: String, sampleId: String) {
+        store.edit {
+            it[ClientIdKey] = clientId
+            it[ClientSampleIdKey] = sampleId
+        }
+    }
+
+    suspend fun refreshClientActiveTimestamp(timestamp: Long = System.currentTimeMillis()) {
+        store.edit { it[ClientActiveTimestampKey] = timestamp }
+    }
+
     private companion object {
         val ForumSortKey = stringPreferencesKey("forum_sort")
         val FloorSortKey = stringPreferencesKey("floor_sort")
@@ -72,8 +119,25 @@ class TiebaSettingsRepository(private val context: Context) {
         val LastSignAtKey = longPreferencesKey("last_sign_at")
         val LastSignOutcomeKey = stringPreferencesKey("last_sign_outcome")
         val LastSignMessageKey = stringPreferencesKey("last_sign_message")
+        val ClientUuidKey = stringPreferencesKey("client_uuid")
+        val ClientIdKey = stringPreferencesKey("client_id")
+        val ClientSampleIdKey = stringPreferencesKey("sample_id")
+        val ClientBaiduIdKey = stringPreferencesKey("baidu_id")
+        val ClientActiveTimestampKey = longPreferencesKey("active_timestamp")
+        val ClientFirstInstallTimeKey = longPreferencesKey("client_first_install_time")
+        val ClientLastUpdateTimeKey = longPreferencesKey("client_last_update_time")
     }
 }
+
+data class TiebaClientConfig(
+    val uuid: String,
+    val clientId: String?,
+    val sampleId: String?,
+    val baiduId: String?,
+    val activeTimestamp: Long,
+    val firstInstallTime: Long,
+    val lastUpdateTime: Long,
+)
 
 private inline fun <reified T : Enum<T>> String?.enumOr(default: T): T =
     enumValues<T>().firstOrNull { it.name == this } ?: default

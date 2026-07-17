@@ -34,6 +34,7 @@ import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Houseboat
 import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.RssFeed
 import androidx.compose.material.icons.outlined.Style
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AlertDialog
@@ -76,12 +77,15 @@ private const val SettingsHomeRoute = "settings_home"
 private const val ThemeSettingsRoute = "settings_theme"
 private const val UiSettingsRoute = "settings_ui"
 private const val TiebaSettingsRoute = "settings_tieba"
+private const val RssSettingsRoute = "settings_rss"
 
 @Composable
 fun AppearanceSettingsScreen(
     current: AppearanceState,
     themeSettings: Settings<ThemeSettings>,
     uiSettings: Settings<UISettings>,
+    rssFeedSettings: Settings<RssFeedSettings>,
+    currentRssFeeds: RssFeedSettings,
     reduceEffect: Boolean,
     onThemedIconChange: (Boolean) -> Unit,
     onBack: () -> Unit,
@@ -126,6 +130,7 @@ fun AppearanceSettingsScreen(
                 onBack = onBack,
                 onTheme = { navigator.navigate(ThemeSettingsRoute) },
                 onUi = { navigator.navigate(UiSettingsRoute) },
+                onRss = { navigator.navigate(RssSettingsRoute) },
                 onTieba = { navigator.navigate(TiebaSettingsRoute) },
             )
         }
@@ -147,6 +152,13 @@ fun AppearanceSettingsScreen(
         composable(TiebaSettingsRoute) {
             TiebaSettingsScreen(onBack = navigator::navigateUp)
         }
+        composable(RssSettingsRoute) {
+            RssSettingsScreen(
+                settings = rssFeedSettings,
+                initial = currentRssFeeds,
+                onBack = navigator::navigateUp,
+            )
+        }
     }
 }
 
@@ -155,6 +167,7 @@ private fun SettingsHomeScreen(
     onBack: () -> Unit,
     onTheme: () -> Unit,
     onUi: () -> Unit,
+    onRss: () -> Unit,
     onTieba: () -> Unit,
 ) {
     val themeTitle = stringResource(R.string.settings_theme_title)
@@ -177,6 +190,13 @@ private fun SettingsHomeScreen(
                     summary = uiSummary,
                     icon = Icons.Outlined.Tune,
                     trailingIcon = Icons.Outlined.Style,
+                )
+                preference(
+                    onClick = onRss,
+                    title = "RSS 订阅",
+                    summary = "分别管理公众号和校内新闻的 RSS 来源",
+                    icon = Icons.Outlined.RssFeed,
+                    trailingIcon = Icons.Outlined.Tune,
                 )
                 preference(
                     onClick = onTieba,

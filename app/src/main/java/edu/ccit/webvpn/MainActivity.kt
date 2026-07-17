@@ -14,8 +14,6 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
@@ -83,7 +81,6 @@ import edu.ccit.webvpn.core.ui.CcitPalette
 import edu.ccit.webvpn.core.ui.ccitBackground
 import edu.ccit.webvpn.core.ui.ccitTextFieldColors
 import edu.ccit.webvpn.core.webvpn.CaptchaData
-import edu.ccit.webvpn.core.webvpn.LoginResult
 import edu.ccit.webvpn.core.webvpn.RequiredAccountAction
 import edu.ccit.webvpn.settings.AppearanceState
 import edu.ccit.webvpn.settings.AppearanceViewModel
@@ -141,8 +138,6 @@ private fun Theme.toPalette(): CcitPalette = when (this) {
     Theme.DYNAMIC -> CcitPalette.Dynamic
     Theme.CUSTOM -> CcitPalette.Custom
 }
-
-private enum class AppScene { Loading, Login, Authenticated }
 
 @Composable
 private fun WebVpnApp(
@@ -209,64 +204,45 @@ private fun WebVpnApp(
             modifier = Modifier.fillMaxSize().padding(padding),
             contentAlignment = Alignment.Center,
         ) {
-            val scene = when {
-                state.initializing -> AppScene.Loading
-                state.loginResult != null -> AppScene.Authenticated
-                else -> AppScene.Login
-            }
-            AnimatedContent(
-                targetState = scene,
-                transitionSpec = {
-                    (fadeIn(tween(240)) + scaleIn(tween(280), initialScale = 0.985f)) togetherWith
-                        (fadeOut(tween(160)) + scaleOut(tween(180), targetScale = 1.01f))
-                },
-                label = "app scene",
-            ) { targetScene ->
-                when (targetScene) {
-                AppScene.Loading -> LoadingScreen("正在验证登录状态…")
-                AppScene.Authenticated -> AuthenticatedApp(
-                    result = state.loginResult!!,
-                    loggingOut = state.submitting,
-                    checkingSession = state.checkingSession,
-                    academicState = academicState,
-                    onRefreshAcademicCaptcha = academicViewModel::refreshCaptcha,
-                    onAcademicLogin = academicViewModel::login,
-                    onSelectSavedAcademicAccount = academicViewModel::selectSavedAccount,
-                    onForgetSavedAcademicAccount = academicViewModel::forgetSavedAccount,
-                    onUseManualAcademicCredentials = academicViewModel::useManualCredentials,
-                    onSelectAcademicTerm = academicViewModel::selectTerm,
-                    onBestOnlyChanged = academicViewModel::setBestOnly,
-                    onQueryGrades = academicViewModel::queryGrades,
-                    onQueryTimetable = academicViewModel::queryTimetable,
-                    onSelectCourseSelectionTerm = academicViewModel::selectCourseSelectionTerm,
-                    onQueryCourseSelection = academicViewModel::queryCourseSelection,
-                    onLoadEvaluationBatches = academicViewModel::loadEvaluationBatches,
-                    onOpenEvaluationBatch = academicViewModel::openEvaluationBatch,
-                    onCloseEvaluationBatch = academicViewModel::closeEvaluationBatch,
-                    onOpenEvaluationCourse = academicViewModel::openEvaluationCourse,
-                    onCloseEvaluationForm = academicViewModel::closeEvaluationForm,
-                    onSaveEvaluation = academicViewModel::saveEvaluation,
-                    onAcademicLogout = academicViewModel::logout,
-                    onLogout = viewModel::logout,
-                    appearance = appearance,
-                    appearanceViewModel = appearanceViewModel,
-                )
-                AppScene.Login -> LoginScreen(
-                    state = state,
-                    onRefreshCaptcha = viewModel::refreshCaptcha,
-                    onLogin = viewModel::login,
-                    onSelectSavedAccount = viewModel::selectSavedAccount,
-                    onForgetSavedAccount = viewModel::forgetSavedAccount,
-                    onUseManualCredentials = viewModel::useManualCredentials,
-                )
-                }
-            }
+            AuthenticatedApp(
+                result = state.loginResult,
+                webVpnState = state,
+                loggingOut = state.submitting,
+                checkingSession = state.checkingSession,
+                academicState = academicState,
+                onRefreshWebVpnCaptcha = viewModel::refreshCaptcha,
+                onWebVpnLogin = viewModel::login,
+                onSelectSavedWebVpnAccount = viewModel::selectSavedAccount,
+                onForgetSavedWebVpnAccount = viewModel::forgetSavedAccount,
+                onUseManualWebVpnCredentials = viewModel::useManualCredentials,
+                onRefreshAcademicCaptcha = academicViewModel::refreshCaptcha,
+                onAcademicLogin = academicViewModel::login,
+                onSelectSavedAcademicAccount = academicViewModel::selectSavedAccount,
+                onForgetSavedAcademicAccount = academicViewModel::forgetSavedAccount,
+                onUseManualAcademicCredentials = academicViewModel::useManualCredentials,
+                onSelectAcademicTerm = academicViewModel::selectTerm,
+                onBestOnlyChanged = academicViewModel::setBestOnly,
+                onQueryGrades = academicViewModel::queryGrades,
+                onQueryTimetable = academicViewModel::queryTimetable,
+                onSelectCourseSelectionTerm = academicViewModel::selectCourseSelectionTerm,
+                onQueryCourseSelection = academicViewModel::queryCourseSelection,
+                onLoadEvaluationBatches = academicViewModel::loadEvaluationBatches,
+                onOpenEvaluationBatch = academicViewModel::openEvaluationBatch,
+                onCloseEvaluationBatch = academicViewModel::closeEvaluationBatch,
+                onOpenEvaluationCourse = academicViewModel::openEvaluationCourse,
+                onCloseEvaluationForm = academicViewModel::closeEvaluationForm,
+                onSaveEvaluation = academicViewModel::saveEvaluation,
+                onAcademicLogout = academicViewModel::logout,
+                onLogout = viewModel::logout,
+                appearance = appearance,
+                appearanceViewModel = appearanceViewModel,
+            )
         }
     }
 }
 
 @Composable
-private fun LoginScreen(
+internal fun WebVpnLoginScreen(
     state: WebVpnUiState,
     onRefreshCaptcha: () -> Unit,
     onLogin: (String, String, String, Boolean) -> Unit,
@@ -322,7 +298,7 @@ private fun LoginScreen(
             )
             Spacer(Modifier.width(12.dp))
             Column {
-                Text("CCIT-Academic", style = MaterialTheme.typography.headlineLarge)
+                Text("Cithub", style = MaterialTheme.typography.headlineLarge)
                 Text("长春工程学院 · WebVPN 统一入口", color = CcitColors.InkMuted)
             }
         }
@@ -547,18 +523,5 @@ private fun CaptchaImage(captcha: CaptchaData?, loading: Boolean) {
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun LoadingScreen(message: String) {
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        CircularProgressIndicator()
-        Spacer(Modifier.height(14.dp))
-        Text(message, color = CcitColors.InkMuted)
     }
 }

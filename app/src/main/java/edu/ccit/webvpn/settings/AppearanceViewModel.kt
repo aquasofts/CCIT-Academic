@@ -18,6 +18,7 @@ class AppearanceViewModel @Inject constructor(
     val themeSettings = repository.themeSettings
     val uiSettings = repository.uiSettings
     val academicFeatureSettings = repository.academicFeatureSettings
+    val rssFeedSettings = repository.rssFeedSettings
     val state = combine(themeSettings, uiSettings, ::AppearanceState)
         .stateIn(viewModelScope, SharingStarted.Eagerly, AppearanceState())
 

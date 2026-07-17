@@ -2,9 +2,13 @@ package edu.ccit.webvpn.feature.tieba.network
 
 import android.content.Context
 import android.content.pm.ApplicationInfo
+import android.os.Build
+import android.provider.Settings
+import android.util.Base64
 import android.util.Log
+import android.net.Uri
+import android.graphics.BitmapFactory
 import com.google.gson.Gson
-import com.google.gson.JsonObject
 import com.google.gson.annotations.SerializedName
 import com.huanchengfly.tieba.post.api.models.protos.PbContent
 import com.huanchengfly.tieba.post.api.models.protos.Post
@@ -21,6 +25,8 @@ import edu.ccit.webvpn.feature.tieba.FloorReply
 import edu.ccit.webvpn.feature.tieba.FloorReplyPage
 import edu.ccit.webvpn.feature.tieba.FloorSort
 import edu.ccit.webvpn.feature.tieba.ForumPage
+import edu.ccit.webvpn.feature.tieba.ForumRule
+import edu.ccit.webvpn.feature.tieba.ForumRuleItem
 import edu.ccit.webvpn.feature.tieba.ForumSort
 import edu.ccit.webvpn.feature.tieba.ForumSummary
 import edu.ccit.webvpn.feature.tieba.ForumThread
@@ -33,16 +39,25 @@ import edu.ccit.webvpn.feature.tieba.TiebaUserForum
 import edu.ccit.webvpn.feature.tieba.TiebaUserPost
 import edu.ccit.webvpn.feature.tieba.TiebaUserPostPage
 import edu.ccit.webvpn.feature.tieba.TiebaUserProfile
+import edu.ccit.webvpn.feature.tieba.TiebaReplyResult
+import edu.ccit.webvpn.feature.tieba.TiebaUploadedImage
 import edu.ccit.webvpn.feature.tieba.ThreadFloor
 import edu.ccit.webvpn.feature.tieba.ThreadPage
 import edu.ccit.webvpn.feature.tieba.data.AccountEntity
+import edu.ccit.webvpn.feature.tieba.data.TiebaClientConfig
+import edu.ccit.webvpn.feature.tieba.data.TiebaSettingsRepository
 import edu.ccit.webvpn.feature.tieba.originalImageUrl
 import java.io.IOException
+import java.security.MessageDigest
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
+import java.io.File
+import java.io.RandomAccessFile
 import okhttp3.Cache
-import okhttp3.FormBody
+import okhttp3.MultipartBody
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -147,7 +162,56 @@ data class LoginCookies(
     val raw: String,
 )
 
-data class SignResponse(val outcome: SignOutcome, val message: String)
+data class SignResponse(
+    val outcome: SignOutcome,
+    val message: String,
+    val signedDays: Int? = null,
+)
+
+internal fun mapOfficialSignResult(result: TiebaSignResultBean): SignResponse {
+    val code = result.errorCode?.toIntOrNull()
+    val message = result.errorMsg.orEmpty()
+    val userInfo = result.userInfo
+    val days = userInfo?.contSignNum
+    return when {
+        code == 0 && userInfo != null &&
+            userInfo.signBonusPoint != null && userInfo.userSignRank != null -> SignResponse(
+                SignOutcome.SUCCESS,
+                days?.let { "已签${it}天" } ?: "签到成功",
+                days,
+            )
+        code == 1101 || message.contains("已签") -> SignResponse(
+            SignOutcome.ALREADY_SIGNED,
+            days?.let { "已签${it}天" } ?: "今日已经签到",
+            days,
+        )
+        code == 1004 || message.contains("未关注") -> SignResponse(
+            SignOutcome.FAILED,
+            "尚未关注长春工程学院吧",
+        )
+        code == 0 -> SignResponse(SignOutcome.FAILED, "签到响应数据无效")
+        else -> SignResponse(
+            SignOutcome.FAILED,
+            message.ifBlank { code?.let { "签到失败（$it）" } ?: "签到失败（响应缺少错误码）" },
+        )
+    }
+}
+
+internal fun mapOfficialSignFailure(code: Int, message: String): SignResponse = when {
+    code == 1101 || message.contains("已签") -> SignResponse(SignOutcome.ALREADY_SIGNED, "今日已经签到")
+    code == 1004 || message.contains("未关注") -> SignResponse(SignOutcome.FAILED, "尚未关注长春工程学院吧")
+    else -> SignResponse(SignOutcome.FAILED, message.ifBlank { "签到失败（$code）" })
+}
+
+private data class UploadPictureEnvelope(
+    @SerializedName("error_code") val errorCode: String = "-1",
+    @SerializedName("error_msg") val errorMessage: String = "",
+    val picId: String? = null,
+    val picInfo: UploadPictureInfo? = null,
+)
+
+private data class UploadPictureInfo(val originPic: UploadPictureSize? = null)
+private data class UploadPictureSize(val width: String = "0", val height: String = "0")
 
 class TiebaNetworkRepository internal constructor(
     private val context: Context,
@@ -158,7 +222,12 @@ class TiebaNetworkRepository internal constructor(
     private val picPageApi: TiebaPicPageApi,
     private val picPageRequests: TiebaPicPageRequestFactory,
     private val gson: Gson,
+    private val settings: TiebaSettingsRepository,
+    private val officialClientFactory: (AccountEntity?, TiebaClientConfig) -> TiebaOfficialClient = { account, config ->
+        TiebaOfficialClient(context, gson, account, config)
+    },
 ) {
+    private val identity = TiebaClientIdentity(context)
     /** Mirrors TiebaLite's photo-view initialization and returns a fresh, signed original URL. */
     suspend fun resolveOriginalImage(
         data: LoadPicPageData,
@@ -213,7 +282,10 @@ class TiebaNetworkRepository internal constructor(
                         authorName = post.user?.name.orEmpty(),
                         authorNickname = post.user?.nickname.orEmpty(),
                         authorPortrait = portraitUrl(post.user?.portrait.orEmpty()),
-                        replyCount = post.replyCount,
+                        replyCount = post.replyCount.toIntOrNull()
+                            ?.let(::replyCountExcludingFirstFloor)
+                            ?.toString()
+                            ?: post.replyCount,
                         viewCount = "",
                         lastReplyTime = formatEpoch(post.time),
                         isTop = false,
@@ -293,6 +365,184 @@ class TiebaNetworkRepository internal constructor(
         )
     }
 
+    /** Sends a reply entirely in-app using the same protobuf endpoint and field mapping as TiebaLite. */
+    suspend fun addReply(
+        content: String,
+        forumId: Long,
+        forumName: String,
+        threadId: Long,
+        postId: Long? = null,
+        subPostId: Long? = null,
+        replyUserId: Long? = null,
+        replyUserName: String = "",
+        replyUserPortrait: String = "",
+        account: AccountEntity,
+    ): TiebaReplyResult = runRead {
+        val body = content.trim()
+        if (body.isBlank() || threadId <= 0 || forumId <= 0) throw TiebaReadFailure.Data()
+        val credentials = account.toReadCredentials()
+        val response = readApi.addPost(
+            body = readRequests.addPost(
+                content = if (subPostId != null) {
+                    "回复 #(reply, ${replyPortraitToken(replyUserPortrait)}, $replyUserName) :$body"
+                } else {
+                    body
+                },
+                forumId = forumId,
+                forumName = forumName,
+                threadId = threadId,
+                postId = postId,
+                subPostId = subPostId,
+                replyUserId = replyUserId,
+                nickname = account.nickname,
+                tbs = account.tbs,
+                credentials = credentials,
+            ),
+            userToken = account.uid.toString(),
+        )
+        val code = response.error?.error_code ?: 0
+        if (code != 0) {
+            throw IOException(response.error?.error_msg.orEmpty().ifBlank { "回复失败（$code）" })
+        }
+        val result = response.data_ ?: throw TiebaReadFailure.Data()
+        TiebaReplyResult(
+            threadId = result.tid.toLongOrNull() ?: threadId,
+            postId = result.pid.toLongOrNull() ?: throw TiebaReadFailure.Data(),
+            experienceAdded = result.exp?.inc.orEmpty(),
+        )
+    }
+
+    /** Chunked image upload copied from TiebaLite's ImageUploader contract. */
+    suspend fun uploadReplyImages(
+        imageUris: List<Uri>,
+        forumName: String,
+        saveOriginal: Boolean,
+        account: AccountEntity,
+    ): List<TiebaUploadedImage> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        require(imageUris.isNotEmpty() && imageUris.size <= 9)
+        imageUris.mapIndexed { index, uri ->
+            val temporary = File.createTempFile("tieba_reply_${index}_", ".img", context.cacheDir)
+            try {
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    temporary.outputStream().use(input::copyTo)
+                } ?: throw IOException("无法读取所选图片")
+                val maxSize = if (saveOriginal) 10L * 1024 * 1024 else 5L * 1024 * 1024
+                if (temporary.length() <= 0 || temporary.length() > maxSize) {
+                    throw IOException("图片大小不能超过 ${maxSize / 1024 / 1024} MB")
+                }
+                val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeFile(temporary.path, options)
+                if (options.outWidth <= 0 || options.outHeight <= 0) throw IOException("图片格式不受支持")
+                uploadReplyImage(
+                    file = temporary,
+                    width = options.outWidth,
+                    height = options.outHeight,
+                    forumName = forumName,
+                    saveOriginal = saveOriginal,
+                    account = account,
+                )
+            } finally {
+                temporary.delete()
+            }
+        }
+    }
+
+    private suspend fun uploadReplyImage(
+        file: File,
+        width: Int,
+        height: Int,
+        forumName: String,
+        saveOriginal: Boolean,
+        account: AccountEntity,
+    ): TiebaUploadedImage {
+        val fileLength = file.length()
+        val digest = MessageDigest.getInstance("MD5")
+        file.inputStream().use { input ->
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                digest.update(buffer, 0, read)
+            }
+        }
+        val md5 = digest.digest().joinToString("") { "%02x".format(it) }
+        val chunks = ((fileLength + TIEBA_UPLOAD_CHUNK_SIZE - 1) / TIEBA_UPLOAD_CHUNK_SIZE).toInt()
+        var finalResult: UploadPictureEnvelope? = null
+        RandomAccessFile(file, "r").use { random ->
+            repeat(chunks) { chunkIndex ->
+                val remaining = fileLength - chunkIndex.toLong() * TIEBA_UPLOAD_CHUNK_SIZE
+                val chunkSize = minOf(TIEBA_UPLOAD_CHUNK_SIZE.toLong(), remaining).toInt()
+                val bytes = ByteArray(chunkSize)
+                random.readFully(bytes)
+                val isFinish = chunkIndex == chunks - 1
+                val common = officialCommonFields(account) + mapOf(
+                    "stoken" to account.sToken,
+                    "tbs" to account.tbs,
+                )
+                val multipart = MultipartBody.Builder(TIEBA_UPLOAD_BOUNDARY)
+                    .setType(MultipartBody.FORM)
+                    .apply {
+                        common.forEach { (name, value) -> addFormDataPart(name, value) }
+                        addFormDataPart("alt", "json")
+                        addFormDataPart("chunkNo", "${chunkIndex + 1}")
+                        addFormDataPart("forum_name", forumName)
+                        addFormDataPart("groupId", "1")
+                        addFormDataPart("height", height.toString())
+                        addFormDataPart("isFinish", if (isFinish) "1" else "0")
+                        addFormDataPart("is_bjh", "0")
+                        addFormDataPart("pic_water_type", "0")
+                        addFormDataPart("resourceId", "$md5$TIEBA_UPLOAD_CHUNK_SIZE")
+                        addFormDataPart("saveOrigin", if (saveOriginal) "1" else "0")
+                        addFormDataPart("size", fileLength.toString())
+                        addFormDataPart("small_flow_fname", forumName)
+                        addFormDataPart("width", width.toString())
+                        addFormDataPart("chunk", "file", bytes.toRequestBody("application/octet-stream".toMediaType()))
+                    }
+                    .build()
+                val request = Request.Builder()
+                    .url("https://c.tieba.baidu.com/c/s/uploadPicture")
+                    .header("User-Agent", "bdtb for Android $OFFICIAL_WRITE_VERSION")
+                    .header("Cookie", "CUID=${identity.cuid};ka=open;TBBRAND=${Build.MODEL};")
+                    .header("client_user_token", account.uid.toString())
+                    .header("cuid", identity.cuid)
+                    .header("cuid_galaxy2", identity.cuid)
+                    .header("cuid_gid", "")
+                    .header("c3_aid", identity.aid)
+                    .post(multipart)
+                    .build()
+                val result = gson.fromJson(execute(request), UploadPictureEnvelope::class.java)
+                if (result.errorCode.toIntOrNull() != 0) {
+                    throw IOException(result.errorMessage.ifBlank { "图片上传失败（${result.errorCode}）" })
+                }
+                finalResult = result
+            }
+        }
+        val result = finalResult ?: throw IOException("图片上传失败")
+        val pictureId = result.picId?.takeIf(String::isNotBlank) ?: throw IOException("图片上传结果无效")
+        return TiebaUploadedImage(
+            picId = pictureId,
+            width = result.picInfo?.originPic?.width?.toIntOrNull() ?: width,
+            height = result.picInfo?.originPic?.height?.toIntOrNull() ?: height,
+        )
+    }
+
+    suspend fun loadForumRule(account: AccountEntity? = null): ForumRule = runRead {
+        val response = readApi.forumRule(readRequests.forumRule(TARGET_FORUM_ID, account?.toReadCredentials()))
+        val code = response.error?.error_code ?: 0
+        if (code != 0) apiFailure("FORUM_RULE", code)
+        val data = response.data_ ?: throw TiebaReadFailure.Data()
+        ForumRule(
+            title = data.title,
+            publishTime = data.publish_time,
+            preface = data.preface,
+            rules = data.rules.map { rule ->
+                ForumRuleItem(rule.title, rule.content.mapTiebaContent().plainText())
+            },
+            authorName = data.bazhu?.name_show.orEmpty().ifBlank { data.bazhu?.user_name.orEmpty() },
+            authorPortrait = portraitUrl(data.bazhu?.portrait.orEmpty()),
+        )
+    }
+
     suspend fun loadUserProfile(uid: Long, account: AccountEntity? = null): TiebaUserProfile = runRead {
         if (uid <= 0) throw TiebaReadFailure.Data()
         val credentials = account?.toReadCredentials()
@@ -340,29 +590,95 @@ class TiebaNetworkRepository internal constructor(
         )
     }
 
-    /** This is the only content-writing request exposed by the module. */
-    suspend fun sign(account: AccountEntity): SignResponse {
-        val profile = supportApi.profile(cookie = account.cookie).data
-            ?: return SignResponse(SignOutcome.FAILED, "账号已失效，请重新登录")
-        if (!profile.isLoggedIn) return SignResponse(SignOutcome.FAILED, "账号已失效，请重新登录")
-        val tbs = profile.tbs.ifBlank { profile.itbTbs }.ifBlank { account.tbs }
-        val request = Request.Builder()
-            .url("https://tieba.baidu.com/sign/add")
-            .header("Cookie", account.cookie)
-            .header("Referer", "https://tieba.baidu.com/f?kw=$TARGET_FORUM_NAME")
-            .post(FormBody.Builder().add("ie", "utf-8").add("kw", TARGET_FORUM_NAME).add("tbs", tbs).build())
-            .build()
-        val json = gson.fromJson(execute(request), JsonObject::class.java)
-        val code = json.get("no")?.asInt ?: -1
-        val message = json.get("error")?.asString
-            ?: json.getAsJsonObject("data")?.get("errmsg")?.asString
-            ?: if (code == 0) "签到成功" else "签到失败（$code）"
-        return when {
-            code == 0 -> SignResponse(SignOutcome.SUCCESS, "长春工程学院吧签到成功")
-            code == 1101 || message.contains("已签") -> SignResponse(SignOutcome.ALREADY_SIGNED, "今日已经签到")
-            message.contains("未关注") || code == 1004 -> SignResponse(SignOutcome.FAILED, "尚未关注长春工程学院吧")
-            else -> SignResponse(SignOutcome.FAILED, message)
+    suspend fun refreshForumTbs(account: AccountEntity): String = runRead {
+        val response = readForum(
+            page = 1,
+            sortType = 0,
+            goodOnly = false,
+            loadType = 1,
+            credentials = account.toReadCredentials(),
+        )
+        response.requireSuccess("FORUM_SIGN_TBS")
+        val data = response.data_ ?: throw TiebaReadFailure.Data()
+        requireTargetForum(data.forum?.id, data.forum?.name)
+        data.anti?.tbs?.takeIf(String::isNotBlank)
+            ?: throw IOException("签到凭据无效，请刷新贴吧页面后重试")
+    }
+
+    /** Automatic sign-in must consume the anti.tbs from this exact FRS response. */
+    suspend fun signWithFreshForumState(account: AccountEntity): SignResponse =
+        sign(account, refreshForumTbs(account))
+
+    /** Mirrors TiebaLite's OfficialTiebaApi.signFlow and uses FRS data.anti.tbs only. */
+    suspend fun sign(account: AccountEntity, tbs: String): SignResponse {
+        if (tbs.isBlank()) return SignResponse(SignOutcome.FAILED, "签到凭据无效，请刷新贴吧页面后重试")
+        val config = settings.clientConfig(account.cookie.cookieValue("BAIDUID"))
+        return try {
+            val result = officialClientFactory(account, config).sign(
+                TARGET_FORUM_ID.toString(),
+                TARGET_FORUM_NAME,
+                tbs,
+            )
+            if (
+                result.errorCode?.toIntOrNull() == 0 &&
+                (result.userInfo == null || result.userInfo.signBonusPoint == null ||
+                    result.userInfo.userSignRank == null)
+            ) {
+                Log.w(
+                    "TiebaSign",
+                    "invalid response code=0 hasUserInfo=${result.userInfo != null} " +
+                        "hasBonus=${result.userInfo?.signBonusPoint != null} " +
+                        "hasRank=${result.userInfo?.userSignRank != null}",
+                )
+            }
+            mapOfficialSignResult(result)
+        } catch (error: TiebaApiException) {
+            mapOfficialSignFailure(error.code, error.message)
         }
+    }
+
+    /** TiebaLite starts this sync opportunistically; failures are deliberately handled by the caller. */
+    suspend fun syncClientConfig(account: AccountEntity?) {
+        val config = settings.clientConfig(account?.cookie?.cookieValue("BAIDUID"))
+        val result = officialClientFactory(account, config).sync()
+        settings.updateClientSync(result.client.clientId, result.wlConfig.sampleId)
+    }
+
+    private fun officialCommonFields(account: AccountEntity): Map<String, String> {
+        val androidId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
+            .orEmpty().ifBlank { "000" }
+        return linkedMapOf(
+            "BDUSS" to account.bduss,
+            "_client_id" to identity.clientId,
+            "_client_type" to "2",
+            "_client_version" to OFFICIAL_WRITE_VERSION,
+            "_os_version" to Build.VERSION.SDK_INT.toString(),
+            "_phone_imei" to "",
+            "_timestamp" to System.currentTimeMillis().toString(),
+            "active_timestamp" to identity.firstInstallTime.toString(),
+            "android_id" to Base64.encodeToString(androidId.toByteArray(), Base64.NO_WRAP),
+            "brand" to Build.BRAND,
+            "c3_aid" to identity.aid,
+            "cmode" to "1",
+            "cuid" to identity.cuid,
+            "cuid_galaxy2" to identity.cuid,
+            "cuid_gid" to "",
+            "event_day" to java.text.SimpleDateFormat("yyyyMdd", Locale.getDefault()).format(Date()),
+            "extra" to "",
+            "first_install_time" to identity.firstInstallTime.toString(),
+            "framework_ver" to "3340042",
+            "from" to "tieba",
+            "is_teenager" to "0",
+            "last_update_time" to context.packageManager.getPackageInfo(context.packageName, 0).lastUpdateTime.toString(),
+            "mac" to "02:00:00:00:00:00",
+            "model" to Build.MODEL,
+            "net_type" to "1",
+            "oaid" to "",
+            "sdk_ver" to "2.34.0",
+            "start_scheme" to "",
+            "start_type" to "1",
+            "swan_game_ver" to "1038000",
+        )
     }
 
     private suspend fun readForum(
@@ -441,6 +757,7 @@ class TiebaNetworkRepository internal constructor(
             forum = ForumSummary(
                 id = forum.id.toString(),
                 name = forum.name,
+                tbs = data.anti?.tbs.orEmpty(),
                 slogan = forum.slogan.ifBlank {
                     listOf(forum.first_class, forum.second_class).filter(String::isNotBlank).joinToString(" · ")
                 },
@@ -449,6 +766,9 @@ class TiebaNetworkRepository internal constructor(
                 threadCount = forum.thread_num.toString(),
                 postCount = forum.post_num.toString(),
                 isFollowed = forum.is_like == 1,
+                forumRuleTitle = data.forum_rule?.title.orEmpty(),
+                signed = forum.sign_in_info?.user_info?.is_sign_in == 1,
+                signedDays = forum.sign_in_info?.user_info?.cont_sign_num ?: 0,
             ),
             threads = threads,
             page = page.current_page.takeIf { it > 0 } ?: requestedPage,
@@ -459,6 +779,7 @@ class TiebaNetworkRepository internal constructor(
     private fun mapForumThread(source: ThreadInfo, users: Map<Long, User>): ForumThread? {
         val id = source.threadId.takeIf { it > 0 } ?: source.id.takeIf { it > 0 } ?: return null
         val author = users[source.authorId] ?: source.author
+        val richExcerpt = source.richAbstract.mapTiebaContent()
         val images = buildList {
             source.media.forEach { media ->
                 sequenceOf(media.originPic, media.bigPic, media.srcPic)
@@ -476,7 +797,7 @@ class TiebaNetworkRepository internal constructor(
             authorName = author?.name.orEmpty(),
             authorNickname = author?.nameShow.orEmpty(),
             authorPortrait = portraitUrl(author?.portrait.orEmpty()),
-            replyCount = source.replyNum.toString(),
+            replyCount = replyCountExcludingFirstFloor(source.replyNum).toString(),
             viewCount = source.viewNum.toString(),
             lastReplyTime = source.lastTime,
             isTop = source.isTop == 1,
@@ -486,6 +807,8 @@ class TiebaNetworkRepository internal constructor(
             authorId = author?.id ?: source.authorId,
             forumId = source.forumInfo?.id ?: TARGET_FORUM_ID,
             forumName = source.forumInfo?.name.orEmpty().ifBlank { TARGET_FORUM_NAME },
+            richExcerpt = richExcerpt,
+            authorIsManager = author?.is_manager == 1 || author?.is_bawu == 1,
         )
     }
 
@@ -513,7 +836,7 @@ class TiebaNetworkRepository internal constructor(
             floors = floors,
             page = page.current_page.takeIf { it > 0 } ?: requestedPage,
             totalPages = page.total_page.coerceAtLeast(requestedPage),
-            replyCount = thread.replyNum,
+            replyCount = replyCountExcludingFirstFloor(thread.replyNum),
             body = body,
             forumId = forum.id,
             forumName = forum.name,
@@ -541,6 +864,10 @@ class TiebaNetworkRepository internal constructor(
             replies = post.sub_post_list?.sub_post_list.orEmpty().map { mapReply(it, users) },
             richContent = richContent,
             authorId = author.id,
+            authorLevel = author.level_id,
+            authorTitle = author.level_name,
+            authorIp = author.ip_address.ifBlank { author.ip },
+            authorIsManager = author.is_manager == 1 || author.is_bawu == 1,
         )
     }
 
@@ -556,6 +883,10 @@ class TiebaNetworkRepository internal constructor(
             time = formatEpoch(reply.time.toLong()),
             richContent = richContent,
             authorId = author?.id ?: reply.author_id,
+            authorLevel = author?.level_id ?: 0,
+            authorTitle = author?.level_name.orEmpty(),
+            authorIp = author?.ip_address.orEmpty().ifBlank { author?.ip.orEmpty() },
+            authorIsManager = author?.is_manager == 1 || author?.is_bawu == 1,
         )
     }
 
@@ -735,18 +1066,22 @@ class TiebaNetworkRepository internal constructor(
     }
 
     companion object {
-        fun create(context: Context): TiebaNetworkRepository {
+        fun create(
+            context: Context,
+            settings: TiebaSettingsRepository = TiebaSettingsRepository(context.applicationContext),
+        ): TiebaNetworkRepository {
             val appContext = context.applicationContext
             val gson = Gson()
             val cache = Cache(java.io.File(appContext.cacheDir, "tieba_http"), 64L * 1024L * 1024L)
             val supportClient = OkHttpClient.Builder()
                 .cache(cache)
                 .addInterceptor { chain ->
+                    val original = chain.request()
+                    val builder = original.newBuilder()
+                    if (original.header("User-Agent") == null) builder.header("User-Agent", DEFAULT_WEB_USER_AGENT)
+                    if (original.header("Accept-Language") == null) builder.header("Accept-Language", "zh-CN,zh;q=0.9")
                     chain.proceed(
-                        chain.request().newBuilder()
-                            .header("User-Agent", DEFAULT_WEB_USER_AGENT)
-                            .header("Accept-Language", "zh-CN,zh;q=0.9")
-                            .build(),
+                        builder.build(),
                     )
                 }.build()
             val identity = TiebaClientIdentity(appContext)
@@ -775,6 +1110,7 @@ class TiebaNetworkRepository internal constructor(
                 picPageApi = createPicPageRetrofit(picPageClient, gson).create(TiebaPicPageApi::class.java),
                 picPageRequests = TiebaPicPageRequestFactory(appContext, identity),
                 gson = gson,
+                settings = settings,
             )
         }
 
@@ -793,6 +1129,22 @@ class TiebaNetworkRepository internal constructor(
             .build()
     }
 }
+
+private fun String.cookieValue(name: String): String? = split(';').firstNotNullOfOrNull { part ->
+    val separator = part.indexOf('=')
+    if (separator <= 0 || !part.substring(0, separator).trim().equals(name, ignoreCase = true)) {
+        null
+    } else {
+        part.substring(separator + 1).trim().takeIf(String::isNotBlank)
+    }
+}
+
+private const val OFFICIAL_WRITE_VERSION = "12.41.7.1"
+private const val TIEBA_UPLOAD_CHUNK_SIZE = 512_000
+private const val TIEBA_UPLOAD_BOUNDARY = "--------7da3d81520810*"
+
+internal fun replyCountExcludingFirstFloor(totalPostCount: Int): Int =
+    (totalPostCount - 1).coerceAtLeast(0)
 
 fun parseLoginCookies(raw: String): LoginCookies? {
     val parsed = raw.split(';').mapNotNull { part ->
@@ -911,6 +1263,11 @@ private fun portraitUrl(portrait: String): String = when {
     portrait.startsWith("http") || portrait.startsWith("//") -> originalImageUrl(portrait)
     else -> "https://himg.bdimg.com/sys/portrait/item/${portrait.substringBefore('?')}.jpg"
 }
+
+private fun replyPortraitToken(portrait: String): String = portrait
+    .substringBefore('?')
+    .substringAfterLast('/')
+    .removeSuffix(".jpg")
 
 private fun normalizeTiebaUrl(raw: String): String = when {
     raw.startsWith("//") -> "https:$raw"

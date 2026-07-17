@@ -17,6 +17,14 @@ These rules apply to the entire repository.
 - If an emulator or another process locks `app/build`, do not terminate the user's process without permission. Redirect only the app build to `.codex-build/app`, verify the resulting APKs there, copy the handoff APKs into `artifacts/`, and then remove the temporary redirected build and init script.
 - Before any recursive cleanup, resolve every target to an absolute path and verify that it is a known module `build/` directory or a tool-created `.codex-build/` directory inside this repository. Never delete source directories, `artifacts/`, signing material, or machine-local instructions during build cleanup.
 
+## Version management and history
+
+- The current project version and the complete version-change record are maintained in `VERSION_HISTORY.md`. The default `versionName` and `versionCode` in `app/build.gradle.kts` must always match its current-version entry. The current version is `2.1.0` (`versionCode` 6).
+- Before every APK- or bundle-producing build batch (`assemble*`, `bundle*`, or an equivalent packaging task), automatically update the version. Unless the user explicitly requests another version, increment the semantic-version patch component and increment `versionCode` by one. A single command that produces multiple flavors or build types counts as one build batch, so every output from that batch shares the same base version.
+- Update the version once before the first build attempt. Retrying the same failed or interrupted build does not increment it again. Compilation, unit tests, lint, and other verification tasks that do not package an APK or app bundle do not change the version.
+- Every version update must add a dated entry to `VERSION_HISTORY.md` before packaging. Record the version name, version code, and concise user-visible changes; never replace or silently rewrite an older entry. If a requested version already exists, append clarification to its existing entry instead of creating a duplicate heading.
+- An explicitly supplied CI or release version may override the default through `ciVersionName` and `ciVersionCode`, but the released version and its changes must still be recorded in `VERSION_HISTORY.md`. Never publish or hand off an APK whose effective version is absent from the history.
+
 ## Prefer platform solutions
 
 - Prefer stable AndroidX, Jetpack Compose, and Material 3 components over custom navigation, animation, gesture, or lifecycle implementations.

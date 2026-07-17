@@ -27,14 +27,18 @@ require(releaseSigningValues.none { it != null } || releaseSigningValues.all { !
 
 android {
     namespace = "edu.ccit.webvpn"
-    compileSdk = 35
+    compileSdk {
+        version = release(36) {
+            minorApiLevel = 1
+        }
+    }
 
     defaultConfig {
         applicationId = "edu.ccit.webvpn"
         minSdk = 26
         targetSdk = 35
-        versionCode = ciVersionCode ?: 5
-        versionName = ciVersionName ?: "1.0.0"
+        versionCode = ciVersionCode ?: 20
+        versionName = ciVersionName ?: "2.1.14"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -105,6 +109,7 @@ dependencies {
     implementation(project(":core:captcha"))
     implementation(project(":core:ui"))
     implementation(project(":core:webvpn"))
+    implementation(project(":feature:home"))
     implementation(project(":feature:tieba"))
     add("autoCaptchaImplementation", project(":feature:captcha-autofill"))
 
@@ -118,6 +123,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.hilt.android)
     kapt(libs.hilt.compiler)
+    kapt(libs.kotlin.metadata.jvm)
 
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)

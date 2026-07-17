@@ -12,6 +12,9 @@ import com.huanchengfly.tieba.post.api.models.protos.frsPage.AdParam as FrsAdPar
 import com.huanchengfly.tieba.post.api.models.protos.frsPage.FrsPageRequest
 import com.huanchengfly.tieba.post.api.models.protos.frsPage.FrsPageRequestData
 import com.huanchengfly.tieba.post.api.models.protos.frsPage.FrsPageResponse
+import com.huanchengfly.tieba.post.api.models.protos.forumRuleDetail.ForumRuleDetailRequest
+import com.huanchengfly.tieba.post.api.models.protos.forumRuleDetail.ForumRuleDetailRequestData
+import com.huanchengfly.tieba.post.api.models.protos.forumRuleDetail.ForumRuleDetailResponse
 import com.huanchengfly.tieba.post.api.models.protos.pbFloor.PbFloorRequest
 import com.huanchengfly.tieba.post.api.models.protos.pbFloor.PbFloorRequestData
 import com.huanchengfly.tieba.post.api.models.protos.pbFloor.PbFloorResponse
@@ -25,6 +28,9 @@ import com.huanchengfly.tieba.post.api.models.protos.profile.ProfileResponse
 import com.huanchengfly.tieba.post.api.models.protos.userPost.UserPostRequest
 import com.huanchengfly.tieba.post.api.models.protos.userPost.UserPostRequestData
 import com.huanchengfly.tieba.post.api.models.protos.userPost.UserPostResponse
+import com.huanchengfly.tieba.post.api.models.protos.addPost.AddPostRequest
+import com.huanchengfly.tieba.post.api.models.protos.addPost.AddPostRequestData
+import com.huanchengfly.tieba.post.api.models.protos.addPost.AddPostResponse
 import com.huanchengfly.tieba.post.utils.helios.Base32
 import com.huanchengfly.tieba.post.utils.helios.Hasher
 import com.squareup.wire.Message
@@ -54,6 +60,7 @@ import retrofit2.http.Headers
 import retrofit2.http.POST
 
 internal const val TIEBA_V12_VERSION = "12.52.1.0"
+internal const val TIEBA_V12_POST_VERSION = "12.35.1.0"
 private const val PROTOBUF_BOUNDARY = "--------7da3d81520810*"
 private const val TRACE_HEADER = "X-CCIT-Tieba-Request"
 private const val DEFAULT_USER_AGENT =
@@ -102,6 +109,17 @@ internal interface TiebaReadApi {
         @Body body: RequestBody,
         @Header("client_user_token") userToken: String? = null,
     ): UserPostResponse
+
+    @Headers("$TRACE_HEADER: FORUM_RULE")
+    @POST("c/f/forum/forumRuleDetail?cmd=309690&format=protobuf")
+    suspend fun forumRule(@Body body: RequestBody): ForumRuleDetailResponse
+
+    @Headers("$TRACE_HEADER: ADD_POST")
+    @POST("c/c/post/add?cmd=309731&format=protobuf")
+    suspend fun addPost(
+        @Body body: RequestBody,
+        @Header("client_user_token") userToken: String,
+    ): AddPostResponse
 }
 
 internal class TiebaClientIdentity(context: Context) {
@@ -121,22 +139,30 @@ internal class TiebaClientIdentity(context: Context) {
         "$rawAid${Base32.encode(Hasher.hash(rawAid.toByteArray()))}"
     }
     val clientId: String = "wappc_${packageInfo.firstInstallTime}_$stableSuffix"
+    val activeTimestamp: Long = System.currentTimeMillis()
+    val clientLogId: String = activeTimestamp.toString()
     val firstInstallTime: Long = packageInfo.firstInstallTime
     val lastUpdateTime: Long = packageInfo.lastUpdateTime
     val userAgent: String = "$DEFAULT_USER_AGENT tieba/$TIEBA_V12_VERSION"
 
-    fun commonRequest(credentials: TiebaReadCredentials?): CommonRequest {
+    fun commonRequest(
+        credentials: TiebaReadCredentials?,
+        clientVersion: String = TIEBA_V12_VERSION,
+        tbs: String? = null,
+        postMode: Boolean = false,
+    ): CommonRequest {
         val metrics = appContext.resources.displayMetrics
         return CommonRequest(
             BDUSS = credentials?.bduss,
             _client_id = clientId,
             _client_type = 2,
-            _client_version = TIEBA_V12_VERSION,
+            _client_version = clientVersion,
             _os_version = Build.VERSION.SDK_INT.toString(),
             _phone_imei = "",
             _timestamp = System.currentTimeMillis(),
             active_timestamp = firstInstallTime,
-            android_id = Base64.encodeToString(androidId.toByteArray(), Base64.NO_WRAP),
+            android_id = if (postMode) androidId else Base64.encodeToString(androidId.toByteArray(), Base64.NO_WRAP),
+            applist = "".takeIf { postMode },
             brand = Build.BRAND,
             c3_aid = aid,
             cmode = 1,
@@ -165,6 +191,7 @@ internal class TiebaClientIdentity(context: Context) {
             start_scheme = "",
             start_type = 1,
             stoken = credentials?.sToken,
+            tbs = tbs,
             swan_game_ver = "1038000",
             user_agent = userAgent,
             z_id = credentials?.zid,
@@ -360,6 +387,77 @@ internal class TiebaReadRequestFactory(
                 scr_dip = metrics.density.toDouble(),
                 q_type = 1,
                 is_view_card = if (isThread) 1 else 0,
+            ),
+        ),
+        credentials = credentials,
+        includeSToken = true,
+    )
+
+    fun forumRule(forumId: Long, credentials: TiebaReadCredentials?): RequestBody = protobufBody(
+        ForumRuleDetailRequest(
+            ForumRuleDetailRequestData(
+                forum_id = forumId,
+                common = identity.commonRequest(credentials),
+            ),
+        ),
+        credentials = credentials,
+        includeSToken = true,
+    )
+
+    /** Mirrors TiebaLite MixedTiebaApiImpl.addPostFlow and its V12_POST payload. */
+    fun addPost(
+        content: String,
+        forumId: Long,
+        forumName: String,
+        threadId: Long,
+        postId: Long?,
+        subPostId: Long?,
+        replyUserId: Long?,
+        nickname: String,
+        tbs: String,
+        credentials: TiebaReadCredentials,
+    ): RequestBody = protobufBody(
+        AddPostRequest(
+            AddPostRequestData(
+                anonymous = "1",
+                barrage_time = "0".takeIf { postId == null },
+                can_no_forum = "0",
+                common = identity.commonRequest(
+                    credentials = credentials,
+                    clientVersion = TIEBA_V12_POST_VERSION,
+                    tbs = tbs,
+                    postMode = true,
+                ),
+                content = content,
+                entrance_type = "0",
+                fid = forumId.toString(),
+                floor_num = "0",
+                kw = forumName,
+                is_ad = "0",
+                is_addition = "0",
+                is_barrage = "0",
+                is_feedback = "0",
+                is_giftpost = "0",
+                is_pictxt = "0",
+                is_show_bless = 0,
+                is_twzhibo_thread = "0",
+                name_show = nickname,
+                new_vcode = "1",
+                post_from = when {
+                    postId == null && subPostId == null -> "13"
+                    subPostId == null -> "0"
+                    else -> null
+                },
+                quote_id = postId?.toString(),
+                reply_uid = replyUserId?.toString().takeIf { postId != null },
+                repostid = postId?.toString(),
+                sub_post_id = subPostId?.toString(),
+                show_custom_figure = 0,
+                takephoto_num = "0",
+                tid = threadId.toString(),
+                v_fid = "".takeIf { postId == null },
+                v_fname = "".takeIf { postId == null },
+                vcode_tag = "12",
             ),
         ),
         credentials = credentials,

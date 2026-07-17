@@ -24,6 +24,7 @@ class AppearanceSettingsScreenTest {
     fun opensBothSubpagesUpdatesControlsAndReturns() {
         val themeSettings = FakeSettings(ThemeSettings())
         val uiSettings = FakeSettings(UISettings())
+        val rssSettings = FakeSettings(RssFeedSettings())
 
         compose.setContent {
             CcitAcademicTheme {
@@ -31,6 +32,8 @@ class AppearanceSettingsScreenTest {
                     current = AppearanceState(),
                     themeSettings = themeSettings,
                     uiSettings = uiSettings,
+                    rssFeedSettings = rssSettings,
+                    currentRssFeeds = rssSettings.value,
                     reduceEffect = false,
                     onThemedIconChange = {},
                     onBack = {},
@@ -53,6 +56,13 @@ class AppearanceSettingsScreenTest {
             assertEquals(NavigationLabel.SELECTED, uiSettings.value.bottomNavLabel)
             assertTrue(uiSettings.value.reduceEffect)
         }
+        compose.onNodeWithContentDescription("返回").performClick()
+        compose.onNodeWithText("RSS 订阅").performClick()
+        compose.onNodeWithText(
+            "wechatrss.waytomaster.com/api/rss/MzA4ODEyOTE2OA==",
+            substring = true,
+        ).assertIsDisplayed()
+        compose.onNodeWithText("cit-news.pages.dev/rss.xml").assertIsDisplayed()
         compose.onNodeWithContentDescription("返回").performClick()
         compose.onNodeWithText("设置").assertIsDisplayed()
     }

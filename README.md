@@ -1,4 +1,4 @@
-<h1 align="center">CCIT Academic</h1>
+<h1 align="center">Cithub</h1>
 
 <div align="center">
 
@@ -20,15 +20,15 @@
 通过学校 WebVPN 登录，更方便地在手机上查询成绩和使用校园教务功能。
 </p>
 
-<img src="docs/images/1.jpg" alt="CCIT Academic 应用截图" width="30%" />
-<img src="docs/images/2.jpg" alt="CCIT Academic 应用截图" width="30%" />
-<img src="docs/images/3.jpg" alt="CCIT Academic 应用截图" width="30%" />
+<img src="docs/images/1.jpg" alt="Cithub 应用截图" width="30%" />
+<img src="docs/images/2.jpg" alt="Cithub 应用截图" width="30%" />
+<img src="docs/images/3.jpg" alt="Cithub 应用截图" width="30%" />
 
 </div>
 
 ## 介绍
 
-CCIT Academic 是一款面向长春工程学院学生的 Android 客户端。
+Cithub 是一款面向长春工程学院学生的 Android 客户端。
 
 应用通过学校 WebVPN 访问校内服务，为学生提供更加方便的移动端使用体验。目前主要支持 教务系统。
 
@@ -129,7 +129,7 @@ WebVPN 登录成功后，进入成绩查询页面。
 
 ## 免责声明
 
-CCIT Academic 是第三方非官方客户端，不代表长春工程学院。
+Cithub 是第三方非官方客户端，不代表长春工程学院。
 
 学校系统的接口、登录方式、网页结构和安全策略可能随时调整，因此本应用无法保证所有功能始终可用。
 

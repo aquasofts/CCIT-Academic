@@ -61,7 +61,7 @@ app
 
 ## 2026 前端重构的上游声明
 
-主题色生成、分段偏好交互和动效参数参考并适配自 TiebaLite；应用内产品名、包内设计系统语义和资源均已改为 CCIT-Academic。TiebaLite 上游采用 GPL-3.0，源码来源与许可证见：
+主题色生成、分段偏好交互和动效参数参考并适配自 TiebaLite；应用内产品名、包内设计系统语义和资源均已改为 Cithub。TiebaLite 上游采用 GPL-3.0，源码来源与许可证见：
 
 ```text
 TiebaLite: https://github.com/HuanCheng65/TiebaLite

@@ -89,8 +89,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release
-          cp app/build/outputs/apk/autoCaptcha/release/app-autoCaptcha-release.apk "release/Full-CCIT-Academic-V${VERSION}.apk"
-          cp app/build/outputs/apk/manualCaptcha/release/app-manualCaptcha-release.apk "release/Lite-CCIT-Academic-V${VERSION}.apk"
+          cp app/build/outputs/apk/autoCaptcha/release/app-autoCaptcha-release.apk "release/Full-Cithub-V${VERSION}.apk"
+          cp app/build/outputs/apk/manualCaptcha/release/app-manualCaptcha-release.apk "release/Lite-Cithub-V${VERSION}.apk"
 
           build_tools="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
           for apk in release/*.apk; do

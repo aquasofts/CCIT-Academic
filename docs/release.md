@@ -6,8 +6,8 @@
 
 - Tag：`1.1.0`
 - Release 标题：`Release 1.1.0`
-- Full 安装包：`Full-CCIT-Academic-V1.1.0.apk`（包含本机验证码识别和自动回填）
-- Lite 安装包：`Lite-CCIT-Academic-V1.1.0.apk`（手动输入验证码，不包含 ML Kit）
+- Full 安装包：`Full-Cithub-V1.1.0.apk`（包含本机验证码识别和自动回填）
+- Lite 安装包：`Lite-Cithub-V1.1.0.apk`（手动输入验证码，不包含 ML Kit）
 
 ## 首次配置
 

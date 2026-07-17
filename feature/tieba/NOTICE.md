@@ -7,7 +7,7 @@ The `feature:tieba` module is derived from ideas and selected implementation log
 Copyright for the original TiebaLite work remains with its contributors. TiebaLite is
 licensed under GNU GPL version 3. This integration is distributed under the same license.
 
-Changes made for CCIT Academic include:
+Changes made for Cithub include:
 
 - limiting native routing and automatic sign-in to `长春工程学院`;
 - removing all forum write operations except the single-forum sign request;

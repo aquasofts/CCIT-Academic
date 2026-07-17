@@ -12,6 +12,7 @@ import androidx.datastore.preferences.SharedPreferencesMigration
 import androidx.datastore.preferences.preferencesDataStore
 import com.google.android.material.color.utilities.Variant
 import dagger.hilt.android.qualifiers.ApplicationContext
+import edu.ccit.webvpn.feature.home.DefaultHomeFeedUrls
 import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -65,6 +66,12 @@ data class AcademicFeatureSettings(
 )
 
 @Immutable
+data class RssFeedSettings(
+    val wechatUrls: List<String> = DefaultHomeFeedUrls.wechat,
+    val newsUrls: List<String> = DefaultHomeFeedUrls.news,
+)
+
+@Immutable
 abstract class Settings<T>(protected val flow: Flow<T>) : Flow<T> by flow {
     suspend fun snapshot(): T = first()
     abstract fun set(new: T)
@@ -75,6 +82,7 @@ interface SettingsRepository {
     val themeSettings: Settings<ThemeSettings>
     val uiSettings: Settings<UISettings>
     val academicFeatureSettings: Settings<AcademicFeatureSettings>
+    val rssFeedSettings: Settings<RssFeedSettings>
 }
 
 @Singleton
@@ -120,6 +128,11 @@ class DataStoreSettingsRepository @Inject constructor(
         read = ::readAcademicFeatureSettings,
         write = ::writeAcademicFeatureSettings,
     )
+
+    override val rssFeedSettings: Settings<RssFeedSettings> = settings(
+        read = ::readRssFeedSettings,
+        write = ::writeRssFeedSettings,
+    )
 }
 
 private val ThemeKey = stringPreferencesKey("theme")
@@ -133,6 +146,8 @@ private val DarkPreferenceKey = stringPreferencesKey("dark_preference")
 private val ReduceEffectKey = booleanPreferencesKey("reduce_effect")
 private val FavoriteIdsKey = stringSetPreferencesKey("favorite_ids")
 private val FeatureOrderKey = stringPreferencesKey("feature_order")
+private val WechatRssUrlsKey = stringPreferencesKey("rss_wechat_urls")
+private val NewsRssUrlsKey = stringPreferencesKey("rss_news_urls")
 
 internal fun readThemeSettings(preferences: Preferences): ThemeSettings = ThemeSettings(
     theme = preferences[ThemeKey].enumOr(Theme.DYNAMIC),
@@ -185,6 +200,26 @@ internal fun writeAcademicFeatureSettings(
     preferences.remove(FavoriteIdsKey)
     preferences[FeatureOrderKey] = value.orderIds.joinToString(",")
 }
+
+internal fun readRssFeedSettings(preferences: Preferences): RssFeedSettings = RssFeedSettings(
+    wechatUrls = preferences.readRssUrls(WechatRssUrlsKey, DefaultHomeFeedUrls.wechat),
+    newsUrls = preferences.readRssUrls(NewsRssUrlsKey, DefaultHomeFeedUrls.news),
+)
+
+internal fun writeRssFeedSettings(
+    preferences: androidx.datastore.preferences.core.MutablePreferences,
+    value: RssFeedSettings,
+) {
+    preferences[WechatRssUrlsKey] = value.wechatUrls.normalizedRssUrls().joinToString("\n")
+    preferences[NewsRssUrlsKey] = value.newsUrls.normalizedRssUrls().joinToString("\n")
+}
+
+private fun Preferences.readRssUrls(key: Preferences.Key<String>, defaults: List<String>): List<String> =
+    get(key)?.lineSequence()?.toList()?.normalizedRssUrls() ?: defaults
+
+private fun List<String>.normalizedRssUrls(): List<String> = map(String::trim)
+    .filter(String::isNotBlank)
+    .distinct()
 
 private inline fun <reified T : Enum<T>> String?.enumOr(default: T): T =
     enumValues<T>().firstOrNull { it.name == this } ?: default

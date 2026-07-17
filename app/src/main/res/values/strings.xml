@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">CCIT-Academic</string>
+    <string name="app_name">Cithub</string>
     <string name="settings_title">设置</string>
     <string name="settings_theme_title">主题与配色</string>
     <string name="settings_theme_summary">系统动态色、校园预设色与自定义种子色</string>

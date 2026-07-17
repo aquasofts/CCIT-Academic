@@ -61,13 +61,30 @@ data class TiebaAccount(
 data class ForumSummary(
     val id: String = "",
     val name: String = TARGET_FORUM_NAME,
+    val tbs: String = "",
     val slogan: String = "",
     val avatarUrl: String = "",
     val memberCount: String = "",
     val threadCount: String = "",
     val postCount: String = "",
     val isFollowed: Boolean = false,
+    val forumRuleTitle: String = "",
+    val signed: Boolean = false,
+    val signedDays: Int = 0,
 )
+
+@Immutable
+data class ForumRule(
+    val title: String,
+    val publishTime: String,
+    val preface: String,
+    val rules: List<ForumRuleItem>,
+    val authorName: String,
+    val authorPortrait: String,
+)
+
+@Immutable
+data class ForumRuleItem(val title: String, val content: String)
 
 @Immutable
 data class ForumThread(
@@ -87,6 +104,8 @@ data class ForumThread(
     val authorId: Long = 0,
     val forumId: Long = TARGET_FORUM_ID,
     val forumName: String = TARGET_FORUM_NAME,
+    val richExcerpt: List<TiebaContent> = emptyList(),
+    val authorIsManager: Boolean = false,
 )
 
 @Immutable
@@ -154,6 +173,10 @@ data class FloorReply(
     val time: String,
     val richContent: List<TiebaContent> = emptyList(),
     val authorId: Long = 0,
+    val authorLevel: Int = 0,
+    val authorTitle: String = "",
+    val authorIp: String = "",
+    val authorIsManager: Boolean = false,
 )
 
 @Immutable
@@ -161,6 +184,20 @@ data class FloorReplyPage(
     val replies: List<FloorReply>,
     val page: Int,
     val totalPages: Int,
+)
+
+@Immutable
+data class TiebaReplyResult(
+    val threadId: Long,
+    val postId: Long,
+    val experienceAdded: String = "",
+)
+
+@Immutable
+data class TiebaUploadedImage(
+    val picId: String,
+    val width: Int,
+    val height: Int,
 )
 
 @Immutable
@@ -178,6 +215,10 @@ data class ThreadFloor(
     val replies: List<FloorReply>,
     val richContent: List<TiebaContent> = emptyList(),
     val authorId: Long = 0,
+    val authorLevel: Int = 0,
+    val authorTitle: String = "",
+    val authorIp: String = "",
+    val authorIsManager: Boolean = false,
 )
 
 @Immutable
